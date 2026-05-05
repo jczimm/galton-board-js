@@ -16,14 +16,16 @@ export default defineConfig({
     {
       name: 'copy-demo-html',
       writeBundle: async () => {
-        const demoHtmlPath = path.resolve(__dirname, 'index.html');
-        const outHtmlPath = path.resolve(__dirname, 'dist/index.html');
-        let html = await fs.readFile(demoHtmlPath, 'utf8');
-        html = html.replace(
-          /<script type="module" src="[^"]+"><\/script>/,
-          `<script type="module" src="galton-board-js.iife.js"></script>`,
-        );
-        await fs.writeFile(outHtmlPath, html);
+        for (const demoPath of ['index.html', 'custom.html']) {
+          const demoHtmlPath = path.resolve(__dirname, demoPath);
+          const outHtmlPath = path.resolve(__dirname, path.join('dist', demoPath));
+          let html = await fs.readFile(demoHtmlPath, 'utf8');
+          html = html.replace(
+            /<script type="module" src="[^"]+"><\/script>/,
+            `<script type="module" src="galton-board-js.iife.js"></script>`,
+          );
+          await fs.writeFile(outHtmlPath, html);
+        }
       },
     },
   ],
