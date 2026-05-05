@@ -16,10 +16,7 @@ A reusable web component built with LIT that creates an interactive 3D Galton Bo
 
 ```bash
 # Install dependencies
-pnpm install lit three cannon-es
-
-# Or with npm
-npm install lit three cannon-es
+pnpm install install
 ```
 
 ## Quick Start

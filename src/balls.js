@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { PEG_SPACING_X, PEG_SPACING_Y, GRAVITY } from './constants.js';
+import { PEG_SPACING_X, PEG_SPACING_Y } from './constants.js';
 
 const DEBUG_STATIC = false;
 
 let ballIdCounter = 0;
 export class Ball {
-  constructor(scene, world, x = 0, y = 2, z = 0, radius = 0.2) {
+  constructor(scene, world, x = 0, y = 2, z = 0, radius) {
     this.id = ballIdCounter++;
     this.scene = scene;
     this.world = world;
@@ -38,7 +38,7 @@ export class Ball {
       allowSleep: true,
     });
 
-    // Disable damping to prevent air resistance from affecting trajectory
+    // Don't allow air resistance to slightly affect trajectory
     this.body.linearDamping = 0;
     this.body.angularDamping = 0;
     
@@ -50,35 +50,27 @@ export class Ball {
 
   setupPegCollisionHandler(ballFactory) {
     this.addCollisionListener((event) => {
-      const { target, body } = event;
-      
-      // Check if the collision is with one of the big balls (pegs)
-      if (body?.userData?.peg !== undefined) {
-        const peg = body.userData.peg;
-        peg.count++;
+      const { body } = event;
+      if (body?.userData?.peg === undefined) return;
 
-        // Max height to aim for - random between 0.25x and 2x peg spacings
-        const yMax = PEG_SPACING_Y + 0.25 + (0.75 * Math.random() * PEG_SPACING_Y);
-        
-        // Upwards velocity required to reach max height
-        const vy = Math.sqrt(2 * GRAVITY * (yMax - PEG_SPACING_Y));
-        
-        // Time to reach max height and fall back to ground
-        const tUp = vy / GRAVITY;
-        const tDown = Math.sqrt(2 * yMax / GRAVITY);
-        const tTotal = tUp + tDown;
+      const peg = body.userData.peg;
+      peg.count++;
 
-        // Horizontal velocity required to reach target
-        const vx = PEG_SPACING_X / tTotal;
+      // // Override the physics deflection with an explicit 50/50 left/right
+      // // trajectory: each peg is a fresh coin flip, the textbook Galton board.
+      // // Aim for an arc that lands on the next-row neighbor peg one column over.
+      // const g = -this.body.world.gravity.y;
+      // const yMax = PEG_SPACING_Y + 0.25 + 0.75 * Math.random() * PEG_SPACING_Y;
+      // const vy = Math.sqrt(2 * g * (yMax - PEG_SPACING_Y));
+      // const tTotal = vy / g + Math.sqrt(2 * yMax / g);
+      // const vx = PEG_SPACING_X / tTotal;
+      // const direction = Math.random() < 0.5 ? -1 : 1;
+      // this.setVelocity(vx * direction, vy, 0);
 
-        const direction = Math.random() < 0.5 ? -1 : 1;
-
-        this.setVelocity(vx * direction, vy, 0);
-
-        // If this collision is with a row 1 peg, spawn a new ball
-        if (peg.row === 1) {
-          ballFactory();
-        }
+      // Spawn a new ball on the first collision with any peg past row 0.
+      // Idempotency is enforced by the caller's ballFactory.
+      if (peg.row > 0) {
+        ballFactory();
       }
     });
   };
@@ -131,7 +123,7 @@ export class Ball {
   
   createVisualMesh() {
     this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(this.radius, 32, 32),
+      new THREE.SphereGeometry(this.radius, 12, 12),
       new THREE.MeshStandardMaterial({ color: 0xff4444 })
     );
     this.scene.add(this.mesh);
@@ -216,7 +208,12 @@ export class Ball {
     this.scene.remove(this.mesh);
   }
   
-  static createRandomBall(scene, world, radius = 0.2) {
-    return new Ball(scene, world, 0, 2, 0, radius);
+  static createRandomBall(scene, world, radius, y = 4) {
+    // Small lateral jitter so the ball doesn't land dead-center on a
+    // perfectly-symmetric top peg (under real physics, that bounces straight
+    // up forever). This is the analog of a real Galton hopper releasing balls
+    // with tiny positional variation — the only source of randomness needed.
+    const jitter = (Math.random() - 0.5) * radius;
+    return new Ball(scene, world, jitter, y, 0, radius);
   }
 } 

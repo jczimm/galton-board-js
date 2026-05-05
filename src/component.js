@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { GaltonBoard } from './galton-board.js';
-import { GRAVITY, ANIMATION_SPEED } from './constants.js';
+import { GRAVITY, ANIMATION_SPEED, PEG_RADIUS, BALL_RADIUS } from './constants.js';
 
 export class GaltonBoardComponent extends LitElement {
   static properties = {
@@ -17,8 +17,12 @@ export class GaltonBoardComponent extends LitElement {
         }
       }
     },
+    pegPositions: { type: Array, attribute: 'peg-positions' },
+    pegRadius: { type: Number, attribute: 'peg-radius' },
     ballRadius: { type: Number },
-    autoSpawn: { 
+    parallelBalls: { type: Number, attribute: 'parallel-balls' },
+    diagonalWalls: { type: Boolean, attribute: 'diagonal-walls' },
+    autoSpawn: {
       type: Boolean,
       attribute: 'auto-spawn',
       converter: {
@@ -92,7 +96,11 @@ export class GaltonBoardComponent extends LitElement {
     this.width = 800;
     this.height = 600;
     this._pegRows = 12; // Use private property for internal storage
-    this.ballRadius = 0.2;
+    this.pegPositions = undefined;
+    this.pegRadius = PEG_RADIUS;
+    this.ballRadius = BALL_RADIUS;
+    this.parallelBalls = 1;
+    this.diagonalWalls = false;
     this._autoSpawn = true; // Use private property for internal storage
     this.gravity = GRAVITY;
     this.animationSpeed = ANIMATION_SPEED;
@@ -124,7 +132,11 @@ export class GaltonBoardComponent extends LitElement {
       width: this.width,
       height: this.height,
       pegRows: this.pegRows,
+      pegPositions: this.pegPositions,
+      pegRadius: this.pegRadius,
       ballRadius: this.ballRadius,
+      parallelBalls: this.parallelBalls,
+      diagonalWalls: this.diagonalWalls,
       autoSpawn: this.autoSpawn,
       gravity: this.gravity,
       animationSpeed: this.animationSpeed
@@ -204,6 +216,10 @@ export class GaltonBoardComponent extends LitElement {
 
     // If critical properties changed, reinitialize
     if (changedProperties.has('pegRows') ||
+        changedProperties.has('pegPositions') ||
+        changedProperties.has('pegRadius') ||
+        changedProperties.has('parallelBalls') ||
+        changedProperties.has('diagonalWalls') ||
         changedProperties.has('gravity') ||
         changedProperties.has('animationSpeed')) {
       console.log('Updating simulation. Pegs: ', this.pegRows);

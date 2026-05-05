@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Galton Board - Custom</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+      }
+      
+      galton-board {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import '/src/component.js';
+
+      const data = await fetch('./peg_positions.json').then(r => r.json());
+
+      const xOffset = data.pegPositions[0][0][0];
+      const shiftedPositions = data.pegPositions.map(row =>
+        row.map(([x, y]) => [x - xOffset, y])
+      );
+      const pegPositions = shiftedPositions;
+
+      const board = document.createElement('galton-board');
+      // board.pegPositions = pegPositions;
+      // board.pegRows = data.pegRows;
+      // board.pegRadius = data.pegRadius;
+      // board.ballRadius = data.ballRadius;
+      board.autoSpawn = true;
+      board.parallelBalls = 1;
+      // board.diagonalWalls = true;
+      document.body.appendChild(board);
+
+      board.addEventListener('ball-spawned', (e) => {
+        console.log(`Ball spawned! Total: ${e.detail.totalBalls}`);
+      });
+
+      board.addEventListener('click', (e) => {
+        board.addBall()
+      });
+    </script>
+  </body>
+</html>

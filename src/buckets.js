@@ -187,10 +187,6 @@ export class Bucket extends EventTarget {
       if (ball.inBucket == null) {
         ball.inBucket = this;
         this.count++;
-
-        // Give the ball a small random z offset to introduce variability
-        const zOffset = 0.1 * Math.random() - 0.05;
-        ball.body.position.z = zOffset;
         
         // Update the visual display
         this.updateCountDisplay();
@@ -227,9 +223,11 @@ export class Bucket extends EventTarget {
 export function createBuckets(scene, world, pegRows, pegSpacingX, pegSpacingY) {
   // Create buckets below the last row of pegs
   const bucketWidth = pegSpacingX * 1.8; // Width based on peg spacing
-  const bucketHeight = 2.5;
+  const bucketHeight = 7;
   const bucketDepth = 1.5;
-  const bucketY = -pegRows * pegSpacingY - 2; // Position below last row of pegs
+  // Position so the bucket top sits just below the last peg row regardless of
+  // bucketHeight (rim ≈ pegSpacingY * 0.5 below the last row's pegs).
+  const bucketY = -pegRows * pegSpacingY - 0.5 * pegSpacingY - bucketHeight / 2;
 
   // Calculate bucket positions - position them exactly where the next row of pegs would be
   const nextRowCols = pegRows + 1; // Next row would have 'rows + 1' pegs

@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as CANNON from 'cannon-es';
 import { createBuckets } from './buckets.js';
 import { Ball } from './balls.js';
-import { createPegGrid } from './pegs.js';
-import { PEG_SPACING_X, PEG_SPACING_Y, PEG_RADIUS } from './constants.js';
+import { Peg, createPegGrid } from './pegs.js';
+import { PEG_SPACING_X, PEG_SPACING_Y, PEG_RADIUS, BALL_RADIUS } from './constants.js';
 
 export class GaltonBoard extends EventTarget {
   constructor(options = {}) {
@@ -16,8 +16,12 @@ export class GaltonBoard extends EventTarget {
       width = 800,
       height = 600,
       pegRows = 12,
-      ballRadius = 0.2,
+      pegPositions,
+      pegRadius = PEG_RADIUS,
+      ballRadius = BALL_RADIUS,
       autoSpawn = true,
+      parallelBalls = 1,
+      diagonalWalls = false,
       gravity = 9.81,
       animationSpeed = 1.0
     } = options;
@@ -31,8 +35,12 @@ export class GaltonBoard extends EventTarget {
     this.width = width;
     this.height = height;
     this.pegRows = pegRows;
+    this.pegPositions = pegPositions;
+    this.pegRadius = pegRadius;
     this.ballRadius = ballRadius;
     this.autoSpawn = autoSpawn;
+    this.parallelBalls = Math.max(1, parallelBalls);
+    this.diagonalWalls = diagonalWalls;
     this.gravity = gravity;
     this.animationSpeed = animationSpeed;
     this.boardHeight = this.pegRows * PEG_SPACING_Y;
@@ -50,6 +58,7 @@ export class GaltonBoard extends EventTarget {
     this.animationId = null;
     this.isInitialized = false;
     this.ballsSpawned = 0;
+    this.pendingSpawnTimers = new Set();
 
     this.initialize();
   }
@@ -68,9 +77,7 @@ export class GaltonBoard extends EventTarget {
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(this.width, this.height);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    
+
     this.container.appendChild(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -88,12 +95,27 @@ export class GaltonBoard extends EventTarget {
 
     const material = new CANNON.Material();
     this.world.defaultContactMaterial = new CANNON.ContactMaterial(material, material, {
-      friction: 0.1,
-      restitution: 0.4,
+      friction: 1.,
+      restitution: 0,
     });
 
+    // Balls have their own material so we can give ball-vs-ball pairs zero
+    // friction (so balls slip past each other without dragging) while keeping
+    // default friction for ball-vs-peg/bucket/wall interactions (which don't
+    // assign an explicit material → fall back to defaultContactMaterial).
+    // Every spawned ball is tagged with this material in spawnBall.
+    this.ballMaterial = new CANNON.Material('ball');
+    this.world.addContactMaterial(new CANNON.ContactMaterial(
+      this.ballMaterial, this.ballMaterial,
+      { friction: 0.3, restitution: 0. }
+    ));
+
     // Create pegs
-    this.pegs = createPegGrid(this.scene, this.world, this.pegRows, PEG_SPACING_X, PEG_SPACING_Y, PEG_RADIUS);
+    if (this.pegPositions) {
+      this.pegs = this.createPegsFromPositions(this.pegPositions);
+    } else {
+      this.pegs = createPegGrid(this.scene, this.world, this.pegRows, PEG_SPACING_X, PEG_SPACING_Y, this.pegRadius);
+    }
 
     // Create buckets
     this.buckets = createBuckets(this.scene, this.world, this.pegRows, PEG_SPACING_X, PEG_SPACING_Y);
@@ -101,18 +123,142 @@ export class GaltonBoard extends EventTarget {
       bucket.addEventListener('ball-entered-bucket', this.onBallEnteredBucket.bind(this));
     });
 
+    // Funnel above the top peg — collimates every ball into a narrow stream.
+    // Built before the diagonal walls so they can hinge off its mouth.
+    this.funnelBodies = [];
+    this.funnelMeshes = [];
+    this.createFunnel();
+
+    // Optional diagonal walls hugging the peg-triangle envelope
+    this.diagonalWallBodies = [];
+    this.diagonalWallMeshes = [];
+    if (this.diagonalWalls) {
+      this.createDiagonalWalls();
+    }
+
     // Setup lighting
     this.setupLighting();
 
-    // Start with first ball if autoSpawn is enabled
     this.ballsSpawned = 0;
     if (this.autoSpawn) {
-      this.spawnBall();
+      this.startSpawnChains();
     }
 
     this.clock = new THREE.Clock();
     this.isInitialized = true;
     this.startAnimation();
+  }
+
+  createPegsFromPositions(positions) {
+    const pegs = [];
+    for (let row = 0; row < positions.length; row++) {
+      for (const pos of positions[row]) {
+        const x = pos[0];
+        const y = pos[1];
+        const z = pos[2] || 0;
+        pegs.push(new Peg(this.scene, this.world, x, y, z, this.pegRadius, row));
+      }
+    }
+    console.log(pegs);
+    return pegs;
+  }
+
+  // Build two long thin walls along the left and right diagonals of the
+  // peg-triangle, just outside the envelope of the actual pegs. Catches balls
+  // that bounce energetically enough to escape the grid sideways (especially
+  // common with high restitution).
+  createDiagonalWalls() {
+    const colSpacing = 2 * PEG_SPACING_X;
+    const margin = colSpacing;
+
+    let leftEdge = 0;
+    let rightEdge = 0;
+    let bottomY = 0;
+    if (this.pegPositions) {
+      for (const row of this.pegPositions) {
+        for (const [x, y] of row) {
+          if (x < leftEdge) leftEdge = x;
+          if (x > rightEdge) rightEdge = x;
+          if (y < bottomY) bottomY = y;
+        }
+      }
+    } else {
+      const lastRow = this.pegRows - 1;
+      leftEdge = -lastRow * PEG_SPACING_X;
+      rightEdge = lastRow * PEG_SPACING_X;
+      bottomY = -lastRow * PEG_SPACING_Y;
+    }
+
+    // Hinge each diagonal at the inner (exit) corner of the funnel so the
+    // diagonals continue outward from where the funnel walls end.
+    const exitY = this.funnelExitY;
+    const exitHalfWidth = this.funnelExitHalfWidth;
+    const cx = this.funnelCenterX;
+
+    this.buildStaticWall(cx - exitHalfWidth, exitY, leftEdge - margin, bottomY - margin, this.diagonalWallBodies, this.diagonalWallMeshes);
+    this.buildStaticWall(cx + exitHalfWidth, exitY, rightEdge + margin, bottomY - margin, this.diagonalWallBodies, this.diagonalWallMeshes);
+  }
+
+  // Build a thin static box wall from (ax, ay) to (bx, by), oriented along the
+  // segment, and register the body+mesh in the supplied arrays for later cleanup.
+  buildStaticWall(ax, ay, bx, by, bodies, meshes, { thickness = 0.1, depth = 2.0, color = 0x654321 } = {}) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const angle = Math.atan2(dy, dx);
+    const cx = (ax + bx) / 2;
+    const cy = (ay + by) / 2;
+
+    const body = new CANNON.Body({ mass: 0 });
+    body.addShape(new CANNON.Box(new CANNON.Vec3(length / 2, thickness / 2, depth / 2)));
+    body.position.set(cx, cy, 0);
+    body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), angle);
+    this.world.addBody(body);
+    bodies.push(body);
+
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(length, thickness, depth),
+      new THREE.MeshStandardMaterial({ color })
+    );
+    mesh.position.set(cx, cy, 0);
+    mesh.rotation.z = angle;
+    this.scene.add(mesh);
+    meshes.push(mesh);
+  }
+
+  // Two angled walls forming a V above the top peg — every spawned ball passes
+  // through the narrow exit before reaching the peg grid. Acts as a collimator
+  // so the actual entry into the grid is consistent regardless of spawn jitter
+  // or upstream perturbations. Walls use a frictionless contact material so
+  // balls slide rather than catching/jamming at the narrow exit.
+  createFunnel() {
+    const mouthY = 9.5;
+    const exitY = 2.;
+    const mouthHalfWidth = 20.0;
+    const exitHalfWidth = this.ballRadius * 1.5;
+    const cx = 0; // top peg is at x=0 (custom.html xOffset shift, or grid default)
+
+    // Stash for createDiagonalWalls so it can hinge the diagonals at the funnel.
+    this.funnelMouthY = mouthY;
+    this.funnelMouthHalfWidth = mouthHalfWidth;
+    this.funnelExitY = exitY;
+    this.funnelExitHalfWidth = exitHalfWidth;
+    this.funnelCenterX = cx;
+
+    const funnelMaterial = new CANNON.Material('funnel');
+    this.world.addContactMaterial(new CANNON.ContactMaterial(
+      this.ballMaterial, funnelMaterial,
+      { friction: 0.001, restitution: 0. }
+    ));
+
+    this.buildStaticWall(cx - mouthHalfWidth, mouthY, cx - exitHalfWidth, exitY,
+                         this.funnelBodies, this.funnelMeshes);
+    this.buildStaticWall(cx + mouthHalfWidth, mouthY, cx + exitHalfWidth, exitY,
+                         this.funnelBodies, this.funnelMeshes);
+
+    for (const body of this.funnelBodies) {
+      body.material = funnelMaterial;
+    }
   }
 
   setupLighting() {
@@ -121,7 +267,6 @@ export class GaltonBoard extends EventTarget {
 
     const light = new THREE.DirectionalLight(0xffffff, 5);
     light.position.set(5, 10, 7.5);
-    light.castShadow = true;
     this.scene.add(light);
 
     const light2 = new THREE.DirectionalLight(0xffffff, 0.4);
@@ -129,20 +274,71 @@ export class GaltonBoard extends EventTarget {
     this.scene.add(light2);
   }
 
+  // Kick off `parallelBalls` independent spawn chains. Each new ball perpetuates
+  // its own chain via the row>0 collision trigger in spawnBall(). Initial spawns
+  // are staggered by the free-fall time over one row spacing so balls never
+  // overlap at the spawn point — overlapping bodies in cannon-es would resolve
+  // by exploding upward. This matches a real Galton board's hopper releasing
+  // balls in rapid sequence rather than simultaneously.
+  startSpawnChains() {
+    const staggerMs = 1000 * Math.sqrt(2 * PEG_SPACING_Y / this.gravity);
+    this.spawnBall();
+    for (let i = 1; i < this.parallelBalls; i++) {
+      const timerId = setTimeout(() => {
+        this.pendingSpawnTimers.delete(timerId);
+        if (this.autoSpawn && this.isInitialized) this.spawnBall();
+      }, i * staggerMs);
+      this.pendingSpawnTimers.add(timerId);
+    }
+  }
+
+  // True if no existing ball is close enough to the spawn point to overlap or
+  // be hit by a freshly-created ball. Used to defer parallel spawns when the
+  // hopper is still occupied (e.g. a previous ball jammed briefly in the funnel
+  // or fell slowly enough that the next stagger tick has already arrived).
+  isSpawnAreaClear() {
+    const spawnX = 0;
+    const spawnY = 4; // matches Ball.createRandomBall in balls.js
+    const minDist = this.ballRadius * 2.5;
+    const minDistSq = minDist * minDist;
+    for (const ball of this.balls) {
+      const dx = ball.body.position.x - spawnX;
+      const dy = ball.body.position.y - spawnY;
+      if (dx * dx + dy * dy < minDistSq) return false;
+    }
+    return true;
+  }
+
   spawnBall() {
     if (!this.scene || !this.world) return null;
-    
+
+    // if (!this.isSpawnAreaClear()) {
+    //   // Defer until the spawn region is clear; recheck shortly.
+    //   const retryId = setTimeout(() => {
+    //     this.pendingSpawnTimers.delete(retryId);
+    //     if (this.autoSpawn && this.isInitialized) this.spawnBall();
+    //   }, 40);
+    //   this.pendingSpawnTimers.add(retryId);
+    //   return null;
+    // }
+
     const ball = Ball.createRandomBall(this.scene, this.world, this.ballRadius);
+    ball.body.material = this.ballMaterial;
     this.ballsSpawned++;
-    
-    // Always set up collision handler, but make it conditional on autoSpawn
-    ball.setupPegCollisionHandler(() => {
-      // Check autoSpawn at the time of collision, not when the ball was created
-      if (this.autoSpawn) {
+
+    // Idempotent next-spawn trigger: fires once, on this ball's first collision
+    // with any peg past row 0 (see balls.js#setupPegCollisionHandler).
+    let nextSpawnTriggered = false;
+    const triggerNextSpawn = () => {
+      if (nextSpawnTriggered) return;
+      nextSpawnTriggered = true;
+      if (this.autoSpawn && this.isInitialized) {
         this.spawnBall();
       }
-    });
-    
+    };
+
+    ball.setupPegCollisionHandler(triggerNextSpawn);
+
     this.balls.push(ball);
     
     // Dispatch custom event when ball is spawned
@@ -214,7 +410,10 @@ export class GaltonBoard extends EventTarget {
 
   cleanup() {
     this.stopAnimation();
-    
+
+    this.pendingSpawnTimers.forEach(clearTimeout);
+    this.pendingSpawnTimers.clear();
+
     // Clean up balls
     this.balls.forEach(ball => ball.destroy());
     this.balls = [];
@@ -262,7 +461,7 @@ export class GaltonBoard extends EventTarget {
     this.ballsSpawned = 0;
     
     if (this.autoSpawn) {
-      this.spawnBall();
+      this.startSpawnChains();
     }
 
     this.dispatchEvent(new CustomEvent('reset'));
@@ -289,9 +488,9 @@ export class GaltonBoard extends EventTarget {
   setAutoSpawn(autoSpawn) {
     this.autoSpawn = autoSpawn;
     console.log(`AutoSpawn updated to: ${this.autoSpawn}`);
-    
+
     if (this.autoSpawn) {
-      this.spawnBall();
+      this.startSpawnChains();
     }
   }
 
