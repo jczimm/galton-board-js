@@ -5,10 +5,10 @@ import os
 # Canonical proportions (in JS-sim units; mirror src/constants.js
 # and the Ball default in src/balls.js). Both outputs derive from
 # these, so peg/ball/spacing ratios match between the printed board and the sim.
-PEG_RADIUS_REF = 0.5    # JS PEG_RADIUS
-BALL_RADIUS_REF = 0.5   # JS Ball default radius
-COL_SPACING_REF = 2 * 1.5    # JS 2 * PEG_SPACING_X (horizontal distance between adjacent pegs in a row)
-ROW_SPACING_REF = 1.5    # JS PEG_SPACING_Y
+COL_SPACING_REF = 2 * 1.2    # JS 2 * PEG_SPACING_X (horizontal distance between adjacent pegs in a row)
+ROW_SPACING_REF = 2.    # JS PEG_SPACING_Y
+PEG_RADIUS_REF = 0.25    # JS PEG_RADIUS
+BALL_RADIUS_REF = 0.3   # JS Ball default radius
 
 # SCAD scale picked so col_spacing stays at 14 mm (the original printable size).
 SCAD_SCALE = 14.0 / COL_SPACING_REF
