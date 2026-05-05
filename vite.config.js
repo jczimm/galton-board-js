@@ -28,5 +28,16 @@ export default defineConfig({
         }
       },
     },
+    {
+      name: 'copy-demo-json',
+      writeBundle: async () => {
+        for (const demoPath of ['peg_positions.json']) {
+          const demoJsonPath = path.resolve(__dirname, demoPath);
+          const outJsonPath = path.resolve(__dirname, path.join('dist', demoPath));
+          let json = await fs.readFile(demoJsonPath, 'utf8');
+          await fs.writeFile(outJsonPath, json);
+        }
+      },
+    },
   ],
 });

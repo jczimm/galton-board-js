@@ -27,9 +27,8 @@
     </style>
   </head>
   <body>
+    <script type="module" src="/src/component.js"></script>
     <script type="module">
-      import '/src/component.js';
-
       const data = await fetch('./peg_positions.json').then(r => r.json());
 
       const xOffset = data.pegPositions[0][0][0];
