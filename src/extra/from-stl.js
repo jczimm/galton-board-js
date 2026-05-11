@@ -4,7 +4,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const RAPIER = await import('@dimforge/rapier3d');
 
-const BATCH_COUNT = 2500;
+const BATCH_COUNT = (() => {
+  const param = new URLSearchParams(window.location.search).get('balls');
+  return parseInt(param) || 100;
+})();
 const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
 const Z_BOUND_INITIAL = 2.5;     // half-distance between front/back panes
