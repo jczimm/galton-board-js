@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import stlUrl from '/cad/models/from-stl/recreate_original_board.stl?url';
 
-const RAPIER = await import('@dimforge/rapier3d');
+const RAPIER = await import('@dimforge/rapier3d-simd');
 
 const BATCH_COUNT = (() => {
   const param = new URLSearchParams(window.location.search).get('balls');
@@ -42,7 +43,7 @@ scene.add(dir3);
 const world = new RAPIER.World({ x: 0.0, y: -9.81, z: 0.0 });
 const PHYSICS_STEP = 1 / 60;
 world.timestep = PHYSICS_STEP;
-world.integrationParameters.numSolverIterations = 2;
+world.integrationParameters.numSolverIterations = 8;
 
 const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 12, 12);
 const ballMat = new THREE.MeshBasicMaterial({ color: 0x000000, metalness: .7, roughness: .3 });
@@ -118,7 +119,7 @@ function spawnBatch() {
 }
 
 const loader = new STLLoader();
-loader.load('/models/from-stl/recreate_original_board.stl', (geometry) => {
+loader.load(stlUrl, (geometry) => {
   geometry.rotateX(+Math.PI / 2);
   // geometry.scale(-1, 1, 1); // uncomment to test if the stl is imparting any asymmetry (and it's not just coming from the simulation) 
   geometry.computeBoundingBox();
