@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 await RAPIER.init();
 
-const BATCH_COUNT = 150;
+const BATCH_COUNT = 2500;
 const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
 const Z_BOUND_INITIAL = 2.5;     // half-distance between front/back panes
@@ -38,11 +38,11 @@ dir3.position.set(50, 50, -50);
 scene.add(dir3);
 
 const world = new RAPIER.World({ x: 0.0, y: -9.81, z: 0.0 });
-const PHYSICS_STEP = 1 / 120;
+const PHYSICS_STEP = 1 / 60;
 world.timestep = PHYSICS_STEP;
 
 const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 12, 12);
-const ballMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: .7, roughness: .3 });
+const ballMat = new THREE.MeshBasicMaterial({ color: 0x000000, metalness: .7, roughness: .3 });
 
 let balls = [];
 let bbox = null;
@@ -51,14 +51,14 @@ let bboxSize = null;
 function spawnBall(x, y, z) {
   const rbDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.01)
-    .setAngularDamping(0.01)
+    .setLinearDamping(0.6) // roughly simulates the board absorbing energy from the balls and making sound 
+    .setAngularDamping(0.1)
     .setCcdEnabled(true);
   const rigidBody = world.createRigidBody(rbDesc);
 
   const colliderDesc = RAPIER.ColliderDesc.ball(BALL_RADIUS)
-    .setRestitution(0.5)
-    .setFriction(0.5);
+    .setRestitution(0.85)
+    .setFriction(0.1);
   world.createCollider(colliderDesc, rigidBody);
 
   const mesh = new THREE.Mesh(ballGeo, ballMat);
@@ -84,8 +84,8 @@ function createZPanes(center) {
       .setTranslation(center.x, center.y, z);
     const body = world.createRigidBody(desc);
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfThickness)
-      .setRestitution(0.2)
-      .setFriction(0.15);
+      .setRestitution(0.4)
+      .setFriction(0.1);
     world.createCollider(colliderDesc, body);
     return body;
   };
@@ -166,7 +166,10 @@ loader.load('/models/from-stl/recreate_original_board.stl', (geometry) => {
   }
 
   const stlBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-  world.createCollider(RAPIER.ColliderDesc.trimesh(vertices, indices), stlBody);
+  const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices)
+    .setRestitution(0.1)
+    .setFriction(0.1);
+  world.createCollider(colliderDesc, stlBody);
 
   createZPanes(center);
 
@@ -185,9 +188,9 @@ loader.load('/models/from-stl/recreate_original_board.stl', (geometry) => {
   console.error('Failed to load board_def.stl:', err);
 });
 
-renderer.domElement.addEventListener('click', () => {
-  spawnBatch();
-});
+// renderer.domElement.addEventListener('click', () => {
+//   spawnBatch();
+// });
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
