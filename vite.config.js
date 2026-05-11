@@ -21,7 +21,7 @@ export default defineConfig({
           const outHtmlPath = path.resolve(__dirname, path.join('dist', demoPath));
           let html = await fs.readFile(demoHtmlPath, 'utf8');
           html = html.replace(
-            /<script type="module" src="[^"]+"><\/script>/,
+            /<script type="module" src="\/src\/component\.js"><\/script>/,
             `<script type="module" src="galton-board-js.iife.js"></script>`,
           );
           await fs.writeFile(outHtmlPath, html);
