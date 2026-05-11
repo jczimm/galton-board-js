@@ -42,24 +42,24 @@ scene.add(dir3);
 const world = new RAPIER.World({ x: 0.0, y: -9.81, z: 0.0 });
 const PHYSICS_STEP = 1 / 60;
 world.timestep = PHYSICS_STEP;
+world.integrationParameters.numSolverIterations = 2;
 
 const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 12, 12);
 const ballMat = new THREE.MeshBasicMaterial({ color: 0x000000, metalness: .7, roughness: .3 });
 
-let balls = [];
+const balls = [];
 let bbox = null;
 let bboxSize = null;
 
 function spawnBall(x, y, z) {
   const rbDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.6) // roughly simulates the board absorbing energy from the balls and making sound 
-    .setAngularDamping(0.1)
-    .setCcdEnabled(true);
+    .setLinearDamping(0.5)
+    .setAngularDamping(0.1);
   const rigidBody = world.createRigidBody(rbDesc);
 
   const colliderDesc = RAPIER.ColliderDesc.ball(BALL_RADIUS)
-    .setRestitution(0.85)
+    .setRestitution(0.75)
     .setFriction(0.1);
   world.createCollider(colliderDesc, rigidBody);
 
@@ -71,8 +71,6 @@ function spawnBall(x, y, z) {
 }
 
 let zBound = Z_BOUND_INITIAL;
-let panePosBody = null;  // back pane (at center.z + zBound)
-let paneNegBody = null;  // front pane (at center.z - zBound)
 let paneCenterZ = 0;
 
 function createZPanes(center) {
@@ -82,32 +80,18 @@ function createZPanes(center) {
   const halfThickness = 0.5;
 
   const buildPane = (z) => {
-    const desc = RAPIER.RigidBodyDesc.kinematicPositionBased()
+    const desc = RAPIER.RigidBodyDesc.fixed()
       .setTranslation(center.x, center.y, z);
     const body = world.createRigidBody(desc);
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfThickness)
-      .setRestitution(0.4)
+      .setRestitution(0.05)
       .setFriction(0.1);
     world.createCollider(colliderDesc, body);
     return body;
   };
 
-  panePosBody = buildPane(paneCenterZ + zBound);
-  paneNegBody = buildPane(paneCenterZ - zBound);
-}
-
-function updatePanePositions() {
-  if (!panePosBody || !paneNegBody) return;
-  panePosBody.setNextKinematicTranslation({
-    x: panePosBody.translation().x,
-    y: panePosBody.translation().y,
-    z: paneCenterZ + zBound,
-  });
-  paneNegBody.setNextKinematicTranslation({
-    x: paneNegBody.translation().x,
-    y: paneNegBody.translation().y,
-    z: paneCenterZ - zBound,
-  });
+  buildPane(paneCenterZ + zBound);
+  buildPane(paneCenterZ - zBound);
 }
 
 // window.addEventListener('keydown', (e) => {
@@ -169,7 +153,7 @@ loader.load('/models/from-stl/recreate_original_board.stl', (geometry) => {
 
   const stlBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices)
-    .setRestitution(0.1)
+    .setRestitution(0.05)
     .setFriction(0.1);
   world.createCollider(colliderDesc, stlBody);
 
@@ -202,7 +186,13 @@ window.addEventListener('resize', () => {
 
 const clock = new THREE.Clock();
 let accumulator = 0;
-const MAX_STEPS_PER_FRAME = 100;
+const MAX_STEPS_PER_FRAME = 5;
+
+// Enable CCD only for balls fast enough to risk tunneling through a ball-radius
+// of geometry in one step. With PHYSICS_STEP=1/60 and ball radius 0.5, a speed of
+// 30 units/s travels exactly one radius per step. Hysteresis avoids per-frame toggling.
+const CCD_ON_SPEED_SQ = 25 * 25;
+const CCD_OFF_SPEED_SQ = 15 * 15;
 
 function animate() {
   requestAnimationFrame(animate);
@@ -225,17 +215,29 @@ function animate() {
     const r = b.rigidBody.rotation();
     b.mesh.position.set(t.x, t.y, t.z);
     b.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+
+    const v = b.rigidBody.linvel();
+    const speedSq = v.x * v.x + v.y * v.y + v.z * v.z;
+    const ccd = b.rigidBody.isCcdEnabled();
+    if (!ccd && speedSq > CCD_ON_SPEED_SQ) {
+      b.rigidBody.enableCcd(true);
+    } else if (ccd && speedSq < CCD_OFF_SPEED_SQ) {
+      b.rigidBody.enableCcd(false);
+    }
   }
 
-  balls = balls.filter((b) => {
-    const t = b.rigidBody.translation();
-    if (bbox && t.y < bbox.min.y - bboxSize.y) {
-      world.removeRigidBody(b.rigidBody);
-      scene.remove(b.mesh);
-      return false;
+  if (bbox) {
+    const killY = bbox.min.y - bboxSize.y;
+    for (let i = balls.length - 1; i >= 0; i--) {
+      const b = balls[i];
+      if (b.rigidBody.translation().y < killY) {
+        world.removeRigidBody(b.rigidBody);
+        scene.remove(b.mesh);
+        balls[i] = balls[balls.length - 1];
+        balls.pop();
+      }
     }
-    return true;
-  });
+  }
 
   controls.update();
   renderer.render(scene, camera);
