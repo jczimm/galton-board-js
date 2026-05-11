@@ -160,6 +160,12 @@ loader.load(stlUrl, (geometry) => {
 
   createZPanes(center);
 
+  // const centerLineGeo = new THREE.BufferGeometry().setFromPoints([
+  //   new THREE.Vector3(center.x, bbox.max.y + 10, paneCenterZ),
+  //   new THREE.Vector3(center.x, bbox.min.y, paneCenterZ),
+  // ]);
+  // scene.add(new THREE.Line(centerLineGeo, new THREE.LineBasicMaterial({ color: 0xff0000 })));
+
   const maxDim = Math.max(bboxSize.x, bboxSize.y, bboxSize.z);
 
   camera.position.set(
