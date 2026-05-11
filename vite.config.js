@@ -28,27 +28,5 @@ export default defineConfig({
         }
       },
     },
-    {
-      name: 'copy-demo-json',
-      writeBundle: async () => {
-        for (const demoPath of ['peg_positions.json']) {
-          const demoJsonPath = path.resolve(__dirname, demoPath);
-          const outJsonPath = path.resolve(__dirname, path.join('dist', demoPath));
-          let json = await fs.readFile(demoJsonPath, 'utf8');
-          await fs.writeFile(outJsonPath, json);
-        }
-      },
-    },
-    {
-      name: 'copy-stl-assets',
-      writeBundle: async () => {
-        for (const assetPath of ['board_def.stl']) {
-          const srcPath = path.resolve(__dirname, assetPath);
-          const outPath = path.resolve(__dirname, path.join('dist', assetPath));
-          const buf = await fs.readFile(srcPath);
-          await fs.writeFile(outPath, buf);
-        }
-      },
-    },
   ],
 });

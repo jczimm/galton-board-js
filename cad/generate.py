@@ -1,6 +1,9 @@
 import json
 import math
 import os
+from pathlib import Path
+
+OUTPUT_DIR = Path('models')
 
 # Canonical proportions (in JS-sim units; mirror src/constants.js
 # and the Ball default in src/balls.js). Both outputs derive from
@@ -108,9 +111,10 @@ def write_scad(peg_positions, N, filename):
 
     scad.append("}")
 
-    with open(filename, "w") as f:
+    outpath = OUTPUT_DIR / filename
+    with open(outpath, "w") as f:
         f.write("\n".join(scad))
-    print(f"Successfully generated {filename}")
+    print(f"Successfully generated {outpath}")
 
 
 def write_peg_positions_json(peg_positions, N, filename):
@@ -120,10 +124,12 @@ def write_peg_positions_json(peg_positions, N, filename):
         "pegRows": N,
         "pegPositions": peg_positions,
     }
-    os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
-    with open(filename, "w") as f:
+
+    outpath = OUTPUT_DIR / filename
+    os.makedirs(os.path.dirname(outpath) or ".", exist_ok=True)
+    with open(outpath, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"Successfully generated {filename}")
+    print(f"Successfully generated {outpath}")
 
 
 def generate(cdf_func, N, scad_filename="arbitrary_quincunx.scad",
