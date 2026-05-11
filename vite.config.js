@@ -16,7 +16,7 @@ export default defineConfig({
     {
       name: 'copy-demo-html',
       writeBundle: async () => {
-        for (const demoPath of ['index.html', 'custom.html', 'simulate_stl.html']) {
+        for (const demoPath of ['index.html', 'custom.html', 'from-stl.html']) {
           const demoHtmlPath = path.resolve(__dirname, demoPath);
           const outHtmlPath = path.resolve(__dirname, path.join('dist', demoPath));
           let html = await fs.readFile(demoHtmlPath, 'utf8');
