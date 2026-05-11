@@ -3,7 +3,8 @@ import math
 import os
 from pathlib import Path
 
-OUTPUT_DIR = Path('models')
+BASE_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = BASE_DIR / 'models' / 'custom'
 
 # Canonical proportions (in JS-sim units; mirror src/constants.js
 # and the Ball default in src/balls.js). Both outputs derive from

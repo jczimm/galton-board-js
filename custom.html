@@ -29,7 +29,7 @@
   <body>
     <script type="module" src="/src/component.js"></script>
     <script type="module">
-      const data = await fetch('/models/peg_positions.json').then(r => r.json());
+      const data = await fetch('/models/custom/peg_positions.json').then(r => r.json());
 
       const xOffset = data.pegPositions[0][0][0];
       const shiftedPositions = data.pegPositions.map(row =>

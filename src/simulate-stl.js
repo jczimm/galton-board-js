@@ -128,7 +128,7 @@ function spawnBatch() {
 }
 
 const loader = new STLLoader();
-loader.load('/models/board_def.stl', (geometry) => {
+loader.load('/models/simulate-stl/board_def.stl', (geometry) => {
   geometry.rotateX(+Math.PI / 2);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
