@@ -12,17 +12,19 @@
   "homepage": "https://github.com/kws/galton-board-js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build --mode from-stl",
     "preview": "vite preview"
   },
   "main": "dist/galton-board-js.iife.js",
   "module": "dist/galton-board-js.es.js",
   "unpkg": "dist/galton-board-js.iife.js",
   "devDependencies": {
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.6.0"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "^0.18.0",
+    "@dimforge/rapier3d": "^0.19.3",
     "cannon-es": "^0.20.0",
     "lit": "^3.3.0",
     "three": "^0.177.0"

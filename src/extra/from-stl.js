@@ -1,9 +1,8 @@
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d-compat';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-await RAPIER.init();
+const RAPIER = await import('@dimforge/rapier3d');
 
 const BATCH_COUNT = 2500;
 const BALL_RADIUS = .5;
