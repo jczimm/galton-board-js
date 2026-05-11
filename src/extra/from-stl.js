@@ -5,12 +5,12 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 await RAPIER.init();
 
-const BATCH_COUNT = 100;
+const BATCH_COUNT = 150;
 const BALL_RADIUS = .5;
-const SPAWN_Y = 40;
+const SPAWN_Y = 50;
 const Z_BOUND_INITIAL = 2.5;     // half-distance between front/back panes
-const Z_BOUND_STEP = 0.5;      // how much [/] adjust the spacing per keypress
-const Z_BOUND_MIN = 0.5;
+// const Z_BOUND_STEP = 0.5;      // how much [/] adjust the spacing per keypress
+// const Z_BOUND_MIN = 0.5;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1a);
@@ -33,13 +33,16 @@ scene.add(dir1);
 const dir2 = new THREE.DirectionalLight(0xffffff, 0.4);
 dir2.position.set(-50, 50, -50);
 scene.add(dir2);
+const dir3 = new THREE.DirectionalLight(0xffffff, 0.6);
+dir3.position.set(50, 50, -50);
+scene.add(dir3);
 
 const world = new RAPIER.World({ x: 0.0, y: -9.81, z: 0.0 });
-const PHYSICS_STEP = 1 / 60;
+const PHYSICS_STEP = 1 / 120;
 world.timestep = PHYSICS_STEP;
 
 const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 12, 12);
-const ballMat = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+const ballMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: .7, roughness: .3 });
 
 let balls = [];
 let bbox = null;
@@ -54,8 +57,8 @@ function spawnBall(x, y, z) {
   const rigidBody = world.createRigidBody(rbDesc);
 
   const colliderDesc = RAPIER.ColliderDesc.ball(BALL_RADIUS)
-    .setRestitution(0.4)
-    .setFriction(0.25);
+    .setRestitution(0.5)
+    .setFriction(0.5);
   world.createCollider(colliderDesc, rigidBody);
 
   const mesh = new THREE.Mesh(ballGeo, ballMat);
@@ -87,8 +90,8 @@ function createZPanes(center) {
     return body;
   };
 
-  panePosBody = buildPane(center.z - 2.5 + zBound);
-  paneNegBody = buildPane(center.z - 2.5 - zBound);
+  panePosBody = buildPane(paneCenterZ + zBound);
+  paneNegBody = buildPane(paneCenterZ - zBound);
 }
 
 function updatePanePositions() {
@@ -105,31 +108,33 @@ function updatePanePositions() {
   });
 }
 
-window.addEventListener('keydown', (e) => {
-  if (e.key === ']') {
-    zBound += Z_BOUND_STEP;
-    updatePanePositions();
-  } else if (e.key === '[') {
-    zBound = Math.max(Z_BOUND_MIN, zBound - Z_BOUND_STEP);
-    updatePanePositions();
-  }
-});
+// window.addEventListener('keydown', (e) => {
+//   if (e.key === ']') {
+//     zBound += Z_BOUND_STEP;
+//     updatePanePositions();
+//   } else if (e.key === '[') {
+//     zBound = Math.max(Z_BOUND_MIN, zBound - Z_BOUND_STEP);
+//     updatePanePositions();
+//   }
+// });
 
 function spawnBatch() {
   if (!bbox) return;
-  const spreadX = bboxSize.x * 0.5;
-  const spreadZ = 0;
+  const spreadX = bboxSize.x * 0.2;
+  const spreadZ = bboxSize.z * 0.1;
   const center = bbox.getCenter(new THREE.Vector3());
   for (let i = 0; i < BATCH_COUNT; i++) {
     const x = center.x + (Math.random() - 0.5) * spreadX;
-    const z = center.z - 2.5 + (Math.random() - 0.5) * spreadZ;
-    balls.push(spawnBall(x, SPAWN_Y, z));
+    const z = paneCenterZ + (Math.random() - 0.5) * spreadZ;
+    const y = SPAWN_Y + (Math.random() - 0.5) * spreadX;
+    balls.push(spawnBall(x, y, z));
   }
 }
 
 const loader = new STLLoader();
 loader.load('/models/from-stl/recreate_original_board.stl', (geometry) => {
   geometry.rotateX(+Math.PI / 2);
+  // geometry.scale(-1, 1, 1); // uncomment to test if the stl is imparting any asymmetry (and it's not just coming from the simulation) 
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
 
@@ -137,13 +142,13 @@ loader.load('/models/from-stl/recreate_original_board.stl', (geometry) => {
   bboxSize = bbox.getSize(new THREE.Vector3());
   const center = bbox.getCenter(new THREE.Vector3());
 
-  const frontMaterial = new THREE.MeshStandardMaterial({
-    color: 0xcccccc,
-    metalness: 0.1,
-    roughness: 0.8,
+  const boardMaterial = new THREE.MeshStandardMaterial({
+    color: 0xbaba48,
+    metalness: 0.0,
+    roughness: 0.75,
     side: THREE.FrontSide,
   });
-  scene.add(new THREE.Mesh(geometry, frontMaterial));
+  scene.add(new THREE.Mesh(geometry, boardMaterial));
 
   const positions = geometry.attributes.position.array;
   const vertices = positions instanceof Float32Array
@@ -192,7 +197,7 @@ window.addEventListener('resize', () => {
 
 const clock = new THREE.Clock();
 let accumulator = 0;
-const MAX_STEPS_PER_FRAME = 10;
+const MAX_STEPS_PER_FRAME = 100;
 
 function animate() {
   requestAnimationFrame(animate);
