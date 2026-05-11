@@ -2,18 +2,24 @@ import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import stlUrl from '/cad/models/from-stl/recreate_original_board.stl?url';
+import { TriMeshFlags } from '@dimforge/rapier3d-simd';
 
 const RAPIER = await import('@dimforge/rapier3d-simd');
 
-const BATCH_COUNT = (() => {
-  const param = new URLSearchParams(window.location.search).get('balls');
-  return parseInt(param) || 100;
-})();
+const params = (searchParams => ({
+  model: stlUrl.match(/([^/]+)\.stl$/)[1].replaceAll('_', ''),
+  balls: parseInt(searchParams.get('balls')) || 100,
+  ballRest: parseFloat(searchParams.get('ballRest')) || .85,
+  ballFric: parseFloat(searchParams.get('ballFric')) || .1,
+  paneRest: parseFloat(searchParams.get('paneRest')) || .1,
+  paneFric: parseFloat(searchParams.get('paneFric')) || .05,
+  boardRest: parseFloat(searchParams.get('boardRest')) || .5,
+  boardFric: parseFloat(searchParams.get('boardFric')) || .1
+}))(new URLSearchParams(window.location.search));
+
 const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
 const Z_BOUND_INITIAL = 2.5;     // half-distance between front/back panes
-// const Z_BOUND_STEP = 0.5;      // how much [/] adjust the spacing per keypress
-// const Z_BOUND_MIN = 0.5;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1a);
@@ -55,13 +61,13 @@ let bboxSize = null;
 function spawnBall(x, y, z) {
   const rbDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.5)
-    .setAngularDamping(0.1);
+    .setLinearDamping(0.) // in real galton board, this should be negligible - balls are spherical, and the air in the board/buckets should be displaced easily because there's plenty of room around the balls 
+    .setAngularDamping(0.);
   const rigidBody = world.createRigidBody(rbDesc);
 
   const colliderDesc = RAPIER.ColliderDesc.ball(BALL_RADIUS)
-    .setRestitution(0.75)
-    .setFriction(0.1);
+    .setRestitution(params.ballRest)
+    .setFriction(params.ballFric);
   world.createCollider(colliderDesc, rigidBody);
 
   const mesh = new THREE.Mesh(ballGeo, ballMat);
@@ -75,7 +81,7 @@ let zBound = Z_BOUND_INITIAL;
 let paneCenterZ = 0;
 
 function createZPanes(center) {
-  paneCenterZ = center.z - 2.5;
+  paneCenterZ = center.z - 2.54;
   const halfX = Math.max(bboxSize.x, 1) * 4;
   const halfY = Math.max(bboxSize.y, 1) * 4;
   const halfThickness = 0.5;
@@ -85,8 +91,8 @@ function createZPanes(center) {
       .setTranslation(center.x, center.y, z);
     const body = world.createRigidBody(desc);
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfThickness)
-      .setRestitution(0.05)
-      .setFriction(0.1);
+      .setRestitution(params.paneRest)
+      .setFriction(params.paneFric);
     world.createCollider(colliderDesc, body);
     return body;
   };
@@ -95,22 +101,12 @@ function createZPanes(center) {
   buildPane(paneCenterZ - zBound);
 }
 
-// window.addEventListener('keydown', (e) => {
-//   if (e.key === ']') {
-//     zBound += Z_BOUND_STEP;
-//     updatePanePositions();
-//   } else if (e.key === '[') {
-//     zBound = Math.max(Z_BOUND_MIN, zBound - Z_BOUND_STEP);
-//     updatePanePositions();
-//   }
-// });
-
 function spawnBatch() {
   if (!bbox) return;
   const spreadX = bboxSize.x * 0.2;
   const spreadZ = bboxSize.z * 0.1;
   const center = bbox.getCenter(new THREE.Vector3());
-  for (let i = 0; i < BATCH_COUNT; i++) {
+  for (let i = 0; i < params.balls; i++) {
     const x = center.x + (Math.random() - 0.5) * spreadX;
     const z = paneCenterZ + (Math.random() - 0.5) * spreadZ;
     const y = SPAWN_Y + (Math.random() - 0.5) * spreadX;
@@ -153,12 +149,19 @@ loader.load(stlUrl, (geometry) => {
   }
 
   const stlBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-  const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices)
-    .setRestitution(0.05)
-    .setFriction(0.1);
+  const flags = TriMeshFlags.FIX_INTERNAL_EDGES; // KEY for making the simulation result in symmetric distribution!
+  const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices, flags)
+    .setRestitution(params.boardRest)
+    .setFriction(params.boardFric);
   world.createCollider(colliderDesc, stlBody);
 
   createZPanes(center);
+
+  const centerLineGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(center.x, bbox.max.y + 10, paneCenterZ + zBound - .5),
+    new THREE.Vector3(center.x, bbox.min.y, paneCenterZ + zBound - .5),
+  ]);
+  scene.add(new THREE.Line(centerLineGeo, new THREE.LineBasicMaterial({ color: 0xff0000 })));
 
   const maxDim = Math.max(bboxSize.x, bboxSize.y, bboxSize.z);
 
@@ -175,9 +178,30 @@ loader.load(stlUrl, (geometry) => {
   console.error('Failed to load board_def.stl:', err);
 });
 
-// renderer.domElement.addEventListener('click', () => {
-//   spawnBatch();
-// });
+function ballsAsCsv() {
+  return 'x,y,z\n' + balls.map(({ mesh: { position: { x, y, z } }}) =>
+    [x, y, z].map(v => v.toFixed(16)).join(',')).join('\n');
+}
+function paramsAsBIDSString() {
+  params.steps = worldSteps;
+  return new URLSearchParams(params).toString().replaceAll('&', '_').replaceAll('=', '-').replaceAll('-0.', '-.');
+}
+function downloadBlob(content, fileName, contentType) {
+  const blob = new Blob([content], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+
+  // Cleanup: Revoke URL to release memory
+  URL.revokeObjectURL(url);
+}
+renderer.domElement.addEventListener('dblclick', () => {
+  const filename = 'fromstl_' + paramsAsBIDSString() + '_ballpositions.csv';
+  downloadBlob(ballsAsCsv(), filename, 'text/plain');
+});
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -186,6 +210,7 @@ window.addEventListener('resize', () => {
 });
 
 const clock = new THREE.Clock();
+let worldSteps = 0;
 let accumulator = 0;
 const MAX_STEPS_PER_FRAME = 5;
 
@@ -204,6 +229,7 @@ function animate() {
   let stepsThisFrame = 0;
   while (accumulator >= PHYSICS_STEP && stepsThisFrame < MAX_STEPS_PER_FRAME) {
     world.step();
+    worldSteps++;
     accumulator -= PHYSICS_STEP;
     stepsThisFrame++;
   }
