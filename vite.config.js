@@ -16,7 +16,7 @@ export default defineConfig({
     {
       name: 'copy-demo-html',
       writeBundle: async () => {
-        for (const demoPath of ['index.html', 'custom.html']) {
+        for (const demoPath of ['index.html', 'custom.html', 'simulate_stl.html']) {
           const demoHtmlPath = path.resolve(__dirname, demoPath);
           const outHtmlPath = path.resolve(__dirname, path.join('dist', demoPath));
           let html = await fs.readFile(demoHtmlPath, 'utf8');
@@ -36,6 +36,17 @@ export default defineConfig({
           const outJsonPath = path.resolve(__dirname, path.join('dist', demoPath));
           let json = await fs.readFile(demoJsonPath, 'utf8');
           await fs.writeFile(outJsonPath, json);
+        }
+      },
+    },
+    {
+      name: 'copy-stl-assets',
+      writeBundle: async () => {
+        for (const assetPath of ['board_def.stl']) {
+          const srcPath = path.resolve(__dirname, assetPath);
+          const outPath = path.resolve(__dirname, path.join('dist', assetPath));
+          const buf = await fs.readFile(srcPath);
+          await fs.writeFile(outPath, buf);
         }
       },
     },

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.18.0
+        version: 0.18.2
       cannon-es:
         specifier: ^0.20.0
         version: 0.20.0
@@ -23,6 +26,9 @@ importers:
         version: 6.3.5
 
 packages:
+
+  '@dimforge/rapier3d-compat@0.18.2':
+    resolution: {integrity: sha512-DTXrOsn3ra9ZonB+VyqJc16xnRXWsHVa5FK230Z+R1PJ7q8oSRmWQ+AU6e+IJYBHxkM0a5QVDqd729DyeEhHPA==}
 
   '@esbuild/aix-ppc64@0.25.5':
     resolution: {integrity: sha512-9o3TMmpmftaCMepOdA5k/yDw8SfInyzWWTjYTFCX3kPSDJMROQTb8jg+h9Cnwnmm1vOzvxN7gIfB5V2ewpjtGA==}
@@ -389,6 +395,8 @@ packages:
         optional: true
 
 snapshots:
+
+  '@dimforge/rapier3d-compat@0.18.2': {}
 
   '@esbuild/aix-ppc64@0.25.5':
     optional: true
