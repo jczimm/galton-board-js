@@ -5,10 +5,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 await RAPIER.init();
 
-const BATCH_COUNT = 10;
-const BALL_RADIUS = 0.5;
-const SPAWN_Y = 50;
-const Z_BOUND_INITIAL = 2.7;     // half-distance between front/back panes
+const BATCH_COUNT = 100;
+const BALL_RADIUS = .5;
+const SPAWN_Y = 40;
+const Z_BOUND_INITIAL = 2.5;     // half-distance between front/back panes
 const Z_BOUND_STEP = 0.5;      // how much [/] adjust the spacing per keypress
 const Z_BOUND_MIN = 0.5;
 
@@ -35,7 +35,7 @@ dir2.position.set(-50, 50, -50);
 scene.add(dir2);
 
 const world = new RAPIER.World({ x: 0.0, y: -9.81, z: 0.0 });
-const PHYSICS_STEP = 1 / 120;
+const PHYSICS_STEP = 1 / 60;
 world.timestep = PHYSICS_STEP;
 
 const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 12, 12);
@@ -48,14 +48,14 @@ let bboxSize = null;
 function spawnBall(x, y, z) {
   const rbDesc = RAPIER.RigidBodyDesc.dynamic()
     .setTranslation(x, y, z)
-    .setLinearDamping(0.0)
-    .setAngularDamping(0.0)
+    .setLinearDamping(0.01)
+    .setAngularDamping(0.01)
     .setCcdEnabled(true);
   const rigidBody = world.createRigidBody(rbDesc);
 
   const colliderDesc = RAPIER.ColliderDesc.ball(BALL_RADIUS)
-    .setRestitution(0.1)
-    .setFriction(0.2);
+    .setRestitution(0.4)
+    .setFriction(0.25);
   world.createCollider(colliderDesc, rigidBody);
 
   const mesh = new THREE.Mesh(ballGeo, ballMat);
@@ -81,8 +81,8 @@ function createZPanes(center) {
       .setTranslation(center.x, center.y, z);
     const body = world.createRigidBody(desc);
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfThickness)
-      .setRestitution(0.1)
-      .setFriction(0.2);
+      .setRestitution(0.2)
+      .setFriction(0.15);
     world.createCollider(colliderDesc, body);
     return body;
   };
@@ -117,7 +117,7 @@ window.addEventListener('keydown', (e) => {
 
 function spawnBatch() {
   if (!bbox) return;
-  const spreadX = bboxSize.x * 0.75;
+  const spreadX = bboxSize.x * 0.5;
   const spreadZ = 0;
   const center = bbox.getCenter(new THREE.Vector3());
   for (let i = 0; i < BATCH_COUNT; i++) {
@@ -128,7 +128,7 @@ function spawnBatch() {
 }
 
 const loader = new STLLoader();
-loader.load('/models/from-stl/board_def.stl', (geometry) => {
+loader.load('/models/from-stl/recreate_original_board.stl', (geometry) => {
   geometry.rotateX(+Math.PI / 2);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
