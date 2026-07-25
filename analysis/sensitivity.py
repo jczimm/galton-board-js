@@ -98,6 +98,61 @@ def sensitivity(summary: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
+def factorial(
+    summary: pl.DataFrame,
+    a: str,
+    a_levels: tuple,
+    b: str,
+    b_levels: tuple,
+    metrics: list[str] | None = None,
+) -> pl.DataFrame:
+    """2x2 interaction: does `a`'s effect depend on the level of `b`?
+
+    One-at-a-time sweeps are blind to this by construction. The contrast is
+    (a_hi - a_lo at b_hi) - (a_hi - a_lo at b_lo); if it's zero the two act
+    independently, whatever their individual effects.
+    """
+    metrics = metrics or ["variance", "skewness", "fit_r2", "w1_mm"]
+    others = {k: v for k, v in BASELINE.items() if k not in (a, b)}
+
+    cells = {}
+    for av in a_levels:
+        for bv in b_levels:
+            f = summary
+            for k, v in others.items():
+                if k in f.columns:
+                    f = f.filter(pl.col(k) == v)
+            cells[(av, bv)] = f.filter(pl.col(a) == av, pl.col(b) == bv)
+
+    missing = [k for k, v in cells.items() if len(v) == 0]
+    if missing:
+        raise ValueError(f"no runs for {a}/{b} cells: {missing}")
+
+    rows = []
+    for m in metrics:
+        cell_means = {k: v[m].mean() for k, v in cells.items()}
+        ns = {k: len(v) for k, v in cells.items()}
+        # pool the within-cell variances rather than reusing the baseline sd:
+        # a cell can be noisier than baseline, and that has to widen the error
+        dof = sum(n - 1 for n in ns.values())
+        pooled = np.sqrt(
+            sum((len(v) - 1) * (v[m].std() ** 2 or 0) for v in cells.values()) / dof
+        )
+        simple_hi = cell_means[(a_levels[1], b_levels[1])] - cell_means[(a_levels[0], b_levels[1])]
+        simple_lo = cell_means[(a_levels[1], b_levels[0])] - cell_means[(a_levels[0], b_levels[0])]
+        inter = simple_hi - simple_lo
+        se = pooled * np.sqrt(sum(1 / n for n in ns.values()))
+        rows.append({
+            "metric": m,
+            f"{a}_effect_at_low_{b}": simple_lo,
+            f"{a}_effect_at_high_{b}": simple_hi,
+            "interaction": inter,
+            "se": se,
+            "z": inter / se if se > 0 else np.nan,
+        })
+    return pl.DataFrame(rows)
+
+
 def ranking(sens: pl.DataFrame) -> pl.DataFrame:
     """Worst-case effect of each parameter across the levels tried."""
     z_cols = [f"{m}_z" for m in METRICS]

@@ -95,11 +95,34 @@ photos give a better empirical target than a gaussian does.
 
 ### E. reference target from the photos
 
-- [ ] extract per-bucket fill heights from `analysis/reference/board_def_still.webp` (939x1440 still, shot nearly straight on) and the last frame of `board_def.webp` (30-frame animation; note it's an animated webp, so `webpmux -get frame N` rather than ffmpeg). rectify with a homography off the four pane corners (real dimensions known from clear_board.stl bbox), then column-profile the ball mass. normalize -> empirical PDF.
-- [ ] the still and the animation's final frame are two independent physical realizations — comparing them gives a real-board run-to-run variability estimate, i.e. how much of the jaggedness is sampling noise vs. structure. do this before treating either profile as a target.
-- [ ] `Galton Board [i-hbnG_IKyI].webm` and `building_instructions.pdf` are additional reference material — the video may give more settled-distribution frames (more realizations), and the instructions should confirm the intended tilt angle and ball count.
-  > caveats: unknown ball count, single realization each, unknown handling/tilt during the run. use as a shape/width plausibility check, not to calibrate 6 coefficients.
-- [ ] free sanity check needing no photo: an ideal 10-row lattice gives `sigma = sqrt(10 * .25) * (h_spacing / 2) ~= 3.8mm`. compare to the sim's sigma. big deviation = balls aren't doing a clean lattice walk, which is itself the finding.
+- [x] `analysis/photo.py` reads a bucket distribution off both photographs. no homography needed in the end — locating each divider in the image absorbs the mild perspective directly.
+
+#### ANSWER: the sim already matches the real board as well as the board matches itself
+
+| | variance | skew | normality r2 |
+|---|---|---|---|
+| still photo | 284.5 | -0.053 | 0.915 |
+| animation, last frame | 195.2 | +0.016 | 0.981 |
+| sim (800 balls, defaults) | 218.4 | -0.003 | 0.985 |
+
+earth-mover distance between distributions, in mm:
+
+| pair | distance |
+|---|---|
+| **still <-> anim (two real runs)** | **2.42** |
+| still <-> sim | 1.80 |
+| anim <-> sim | 1.52 |
+| sim seed-to-seed | 0.84 |
+
+- **the sim is closer to each photo than the photos are to each other.** so there's no evidence the sim is mis-calibrated — the real board's own run-to-run spread exceeds its disagreement with the sim.
+- **"the real board isn't very normal" doesn't survive two samples.** still r2 0.915, animation 0.981, sim 0.985. the jaggedness in any one photo is mostly sampling noise, and the two photos disagree about the tails (still has 1.8%/3.3% in the outer left buckets, the animation 0.3%/0.4%) more than either disagrees with the sim.
+- **physical run-to-run spread dwarfs every coefficient effect from D.** the two photos differ by 89 in variance; the largest coefficient effect measured was ballRest at 42, and sim seed noise is 7.7. so photos cannot discriminate between coefficient settings — 2 realizations is far too few. they can only say the sim is in the right ballpark, which they do.
+- caveats: n=2, unknown ball count in each, and the animation frame is low resolution (2.25 px/mm vs 7.23), so its tails are the least trustworthy part of the comparison.
+
+- [x] free sanity check: an ideal 10-row lattice gives variance 57.6 mm^2 (sigma 7.6mm). observed is **3.4-4.9x that in variance** (1.8-2.2x in sigma), across photos and sim alike.
+  > **this matters for the parked surrogate work.** a ball is not making one +/-2.4mm decision per row. with 3.6mm gaps between 1.2mm pegs and 1mm balls it travels much further sideways per row than the lattice picture assumes — so `shift = (0.5 - p) * COL_SPACING_REF` in generate-custom.py rests on a model this board doesn't obey. measure p(delta) before trusting it.
+- [c] ~~the webm may give more realizations~~ — checked: it's a **different board** (different stand and background), shot at a steep angle with motion blur, so it's not usable for per-bucket measurement. `building_instructions.pdf` is vector-only with no extractable text, so no stated tilt angle or ball count.
+- [ ] extraction notes worth keeping: the still is sharp enough that balls separate by local *texture*, but the animation frame is so soft that the fin edges are the highest-contrast thing in it — every column read as completely full until the mask switched to a brightness (otsu) split. and the divider comb must be fitted to the gaps between *ball* columns, not to the bright fins: the board rim is bright too, and fitting to fins locked one bucket right, silently dropping a real bucket and reading the rim as the sixteenth. both fits were checked by drawing them over the photo.
 
 ### F. housekeeping
 
