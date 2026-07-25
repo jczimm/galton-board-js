@@ -43,13 +43,13 @@ photos give a better empirical target than a gaussian does.
 
 ### B. fix the measurement
 
-- [ ] use fixed bucket-edge bins derived from the CAD geometry, not `np.linspace(x.min(), x.max())`
-  > right now the bin edges are data-dependent, so different param settings get different bins and the moments aren't comparable across exactly the conditions being swept. also set n_bins to the real bucket count instead of 16.
-  > seen in practice: 200-ball boarddef runs report variance ~109-147 while the old 3000-ball runs report ~300, largely because fewer balls means a narrower observed x range means narrower bins. the number is currently as much a function of ball count as of physics.
-- [ ] `sums / counts` in `moments_for_group` warns on empty bins (0/0); the `np.where` picks the right value but the divide still runs. use `np.divide(..., where=counts>0)`.
-- [ ] use per-bucket counts instead of `mean(y - y.min())` per bin
-  > mean-y is proportional to fill height only under uniform packing, and packing is itself a function of restitution/friction — i.e. it's confounded with the sweep. positions of every ball are already in the CSV, so counts are free and unbiased.
-- [ ] generalize `normality_r2` to a divergence against an arbitrary target PDF (chi-square, or EMD if I care where the mass is wrong). normality becomes one target among others; keep reporting the three moments alongside.
+- [x] bucket edges now come from the board STL (`analysis/geometry.py`), not from `np.linspace(x.min(), x.max())`. the dividers are 1.05mm fins on a 4.8mm pitch (= `h_spacing`), giving **16 buckets**: 14 full-width plus 2 narrower (2.96mm) edge buckets. all three boards share the same bucket geometry.
+  > validated against the data: zero balls land within 0.5mm of any derived fin centre, hundreds at each bucket middle. the fins top out at y = -12.4, which is where the old hand-picked `y < -12` came from — it's now derived.
+  > effect: variance across the 800/1600/3000-ball runs went from 273-383 (mostly a function of ball count, via the floating bins) to 191-225. the leftover spread is real.
+- [x] per-bucket counts instead of `mean(y - y.min())` per bin. this also removed the 0/0 divide warning by construction.
+- [x] `normality_r2` generalized: `summarize(..., target=<per-bucket probability vector>)` reports `fit_r2`, `chi2_per_dof` and `w1_mm` (earth-mover, in mm — it cares *where* the mass is wrong). target defaults to the gaussian matched to the run's own mean/variance, so the old normality check is just one special case. verified: a target compared with itself gives r2 exactly 1.0, uniform gives exactly 0.
+- [x] balls are now split into caught / stuck / outside by geometry instead of being silently dropped by a y filter.
+  > this immediately flagged junk: two of the 250-ball CSVs have all 250 balls `n_stuck` (exported long before anything reached the buckets) and a third has 234 stuck / 16 caught. those three files should be deleted rather than analysed.
 
 ### C. physical fidelity gaps the reference photos exposed
 
