@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# large reference media (re-downloadable; kept locally in analysis/reference/)
+*.webm

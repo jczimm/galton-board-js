@@ -6,16 +6,52 @@ import { TriMeshFlags } from '@dimforge/rapier3d-simd';
 
 const RAPIER = await import('@dimforge/rapier3d-simd');
 
-const params = (searchParams => ({
+const searchParams = new URLSearchParams(window.location.search);
+
+// num() keeps 0 as a legitimate value -- `|| default` would silently collapse
+// seed=0 into seed=1, which would quietly duplicate runs in a seed sweep.
+const num = (key, fallback, parse = parseFloat) =>
+  searchParams.has(key) && Number.isFinite(parse(searchParams.get(key)))
+    ? parse(searchParams.get(key))
+    : fallback;
+
+// everything in `params` ends up in the exported filename, so keep run-control
+// knobs (autorun, maxSteps) out of it
+const params = {
   model: stlUrl.match(/([^/]+)\.stl$/)[1].replaceAll('_', ''),
-  balls: parseInt(searchParams.get('balls')) || 100,
-  ballRest: parseFloat(searchParams.get('ballRest')) || .85,
-  ballFric: parseFloat(searchParams.get('ballFric')) || .1,
-  paneRest: parseFloat(searchParams.get('paneRest')) || .1,
-  paneFric: parseFloat(searchParams.get('paneFric')) || .05,
-  boardRest: parseFloat(searchParams.get('boardRest')) || .5,
-  boardFric: parseFloat(searchParams.get('boardFric')) || .1
-}))(new URLSearchParams(window.location.search));
+  seed: num('seed', 1, parseInt),
+  balls: num('balls', 100, parseInt),
+  ballRest: num('ballRest', .85),
+  ballFric: num('ballFric', .1),
+  paneRest: num('paneRest', .1),
+  paneFric: num('paneFric', .05),
+  boardRest: num('boardRest', .5),
+  boardFric: num('boardFric', .1)
+};
+
+// headless/batch mode: step as fast as the CPU allows (decoupled from the
+// display clock) and hand the CSV to the driver via window.__simResult
+const AUTORUN = searchParams.has('autorun');
+const AUTORUN_STEPS_PER_FRAME = 100;
+
+// settle detection -- a run is "done" when every remaining ball has been below
+// SETTLE_SPEED for SETTLE_HOLD_STEPS consecutive steps. MIN_STEPS guards the
+// start, where every ball is legitimately at rest because it hasn't fallen yet.
+const SETTLE_SPEED_SQ = .05 * .05;
+const SETTLE_HOLD_STEPS = 60;   // 1s of sim time
+const MIN_STEPS = 120;
+const MAX_STEPS = num('maxSteps', 60000, parseInt);
+
+// mulberry32 -- small seeded PRNG so spawn positions are reproducible
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(params.seed);
 
 const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
@@ -58,6 +94,10 @@ const ballMat = new THREE.MeshBasicMaterial({ color: 0x000000, metalness: .7, ro
 const balls = [];
 let bbox = null;
 let bboxSize = null;
+// The STL loads asynchronously. Stepping before the board and balls exist would
+// (a) trip settle detection immediately on an empty world and (b) make step 0
+// mean something different depending on how long the load took.
+let ready = false;
 
 function spawnBall(x, y, z) {
   const rbDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -75,7 +115,8 @@ function spawnBall(x, y, z) {
   mesh.position.set(x, y, z);
   scene.add(mesh);
 
-  return { mesh, rigidBody };
+  // ccd mirrored in JS to avoid an isCcdEnabled() call per ball per step
+  return { mesh, rigidBody, ccd: false };
 }
 
 let paneCenterZ = 0;
@@ -120,9 +161,9 @@ function spawnBatch() {
   const spreadZ = bboxSize.z * 0.1;
   const center = bbox.getCenter(new THREE.Vector3());
   for (let i = 0; i < params.balls; i++) {
-    const x = center.x + (Math.random() - 0.5) * spreadX;
-    const z = paneCenterZ + (Math.random() - 0.5) * spreadZ;
-    const y = SPAWN_Y + (Math.random() - 0.5) * spreadX;
+    const x = center.x + (rand() - 0.5) * spreadX;
+    const z = paneCenterZ + (rand() - 0.5) * spreadZ;
+    const y = SPAWN_Y + (rand() - 0.5) * spreadX;
     balls.push(spawnBall(x, y, z));
   }
 }
@@ -189,13 +230,19 @@ loader.load(stlUrl, (geometry) => {
   controls.update();
 
   spawnBatch();
+  // only now does stepping begin -- see `ready` in animate()
+  ready = true;
 }, undefined, (err) => {
   console.error('Failed to load board_def.stl:', err);
 });
 
+// read straight from the rigid bodies rather than the meshes -- in autorun the
+// meshes are only synced on the frames we actually render, so they go stale
 function ballsAsCsv() {
-  return 'x,y,z\n' + balls.map(({ mesh: { position: { x, y, z } }}) =>
-    [x, y, z].map(v => v.toFixed(16)).join(',')).join('\n');
+  return 'x,y,z\n' + balls.map(({ rigidBody }) => {
+    const { x, y, z } = rigidBody.translation();
+    return [x, y, z].map(v => v.toFixed(16)).join(',');
+  }).join('\n');
 }
 function paramsAsBIDSString() {
   params.steps = worldSteps;
@@ -213,6 +260,28 @@ function downloadBlob(content, fileName, contentType) {
   // Cleanup: Revoke URL to release memory
   URL.revokeObjectURL(url);
 }
+let done = false;
+
+// End of run. Publishes the result on `window` for the headless driver to pick
+// up (more robust than intercepting a browser download) and, outside autorun,
+// still downloads it so the page behaves like it always did.
+function finish(settled) {
+  if (done) return;
+  done = true;
+  params.settled = settled ? 1 : 0;
+  const filename = 'fromstl_' + paramsAsBIDSString() + '_ballpositions.csv';
+  const csv = ballsAsCsv();
+
+  window.__simResult = { filename, csv, steps: worldSteps, settled, ballsRemaining: balls.length };
+  window.__simDone = true;
+  window.dispatchEvent(new CustomEvent('sim-done', { detail: window.__simResult }));
+  document.title = `sim done - ${filename}`;
+  console.log(`[sim] ${settled ? 'settled' : 'hit maxSteps'} at step ${worldSteps}, ${balls.length} balls remaining`);
+
+  if (!AUTORUN) downloadBlob(csv, filename, 'text/plain');
+}
+
+// manual export still available mid-run
 renderer.domElement.addEventListener('dblclick', () => {
   const filename = 'fromstl_' + paramsAsBIDSString() + '_ballpositions.csv';
   downloadBlob(ballsAsCsv(), filename, 'text/plain');
@@ -231,54 +300,101 @@ const MAX_STEPS_PER_FRAME = 5;
 
 // Enable CCD only for balls fast enough to risk tunneling through a ball-radius
 // of geometry in one step. With PHYSICS_STEP=1/60 and ball radius 0.5, a speed of
-// 30 units/s travels exactly one radius per step. Hysteresis avoids per-frame toggling.
+// 30 units/s travels exactly one radius per step. Hysteresis avoids toggling.
 const CCD_ON_SPEED_SQ = 25 * 25;
 const CCD_OFF_SPEED_SQ = 15 * 15;
 
+// Bookkeeping that isn't per-step (escapee removal) runs on a cadence keyed to
+// worldSteps rather than to frames, so a run is identical whether it was paced
+// by the display clock or batched in autorun.
+const CHECK_EVERY = 15;
+const SETTLE_HOLD_CHECKS = SETTLE_HOLD_STEPS / CHECK_EVERY;
+let restingChecks = 0;
+
+function killEscapees() {
+  if (!bbox) return;
+  const killY = bbox.min.y - bboxSize.y;
+  for (let i = balls.length - 1; i >= 0; i--) {
+    const b = balls[i];
+    if (b.rigidBody.translation().y < killY) {
+      world.removeRigidBody(b.rigidBody);
+      scene.remove(b.mesh);
+      balls[i] = balls[balls.length - 1];
+      balls.pop();
+    }
+  }
+}
+
+function stepWorld() {
+  world.step();
+  worldSteps++;
+
+  // one pass over the balls serving both CCD hysteresis and settle detection --
+  // both want linvel, and linvel() is a wasm boundary crossing per call
+  let resting = true;
+  for (const b of balls) {
+    const v = b.rigidBody.linvel();
+    const speedSq = v.x * v.x + v.y * v.y + v.z * v.z;
+    if (speedSq > SETTLE_SPEED_SQ) resting = false;
+    if (!b.ccd && speedSq > CCD_ON_SPEED_SQ) {
+      b.rigidBody.enableCcd(true);
+      b.ccd = true;
+    } else if (b.ccd && speedSq < CCD_OFF_SPEED_SQ) {
+      b.rigidBody.enableCcd(false);
+      b.ccd = false;
+    }
+  }
+
+  if (worldSteps % CHECK_EVERY === 0) {
+    killEscapees();
+    // MIN_STEPS guard: at spawn every ball is at rest simply because it hasn't
+    // started falling yet, which would otherwise trip settle immediately
+    if (resting && worldSteps >= MIN_STEPS) {
+      if (++restingChecks >= SETTLE_HOLD_CHECKS) finish(true);
+    } else {
+      restingChecks = 0;
+    }
+  }
+
+  if (!done && worldSteps >= MAX_STEPS) finish(false);
+}
+
+let frame = 0;
+
 function animate() {
   requestAnimationFrame(animate);
+  frame++;
 
-  const delta = Math.min(clock.getDelta(), 0.1);
-  accumulator += delta;
+  if (ready && !done) {
+    if (AUTORUN) {
+      // run free of the display clock: fixed timestep means the physics is
+      // unchanged, we just get through the run far faster
+      for (let i = 0; i < AUTORUN_STEPS_PER_FRAME && !done; i++) stepWorld();
+    } else {
+      const delta = Math.min(clock.getDelta(), 0.1);
+      accumulator += delta;
 
-  let stepsThisFrame = 0;
-  while (accumulator >= PHYSICS_STEP && stepsThisFrame < MAX_STEPS_PER_FRAME) {
-    world.step();
-    worldSteps++;
-    accumulator -= PHYSICS_STEP;
-    stepsThisFrame++;
+      let stepsThisFrame = 0;
+      while (accumulator >= PHYSICS_STEP && stepsThisFrame < MAX_STEPS_PER_FRAME && !done) {
+        stepWorld();
+        accumulator -= PHYSICS_STEP;
+        stepsThisFrame++;
+      }
+      if (stepsThisFrame === MAX_STEPS_PER_FRAME) {
+        accumulator = 0;
+      }
+    }
   }
-  if (stepsThisFrame === MAX_STEPS_PER_FRAME) {
-    accumulator = 0;
-  }
+
+  // in autorun, drawing thousands of spheres every frame costs more than the
+  // physics does -- keep an occasional frame so a headed run is still watchable
+  if (AUTORUN && !done && frame % 10 !== 0) return;
 
   for (const b of balls) {
     const t = b.rigidBody.translation();
     const r = b.rigidBody.rotation();
     b.mesh.position.set(t.x, t.y, t.z);
     b.mesh.quaternion.set(r.x, r.y, r.z, r.w);
-
-    const v = b.rigidBody.linvel();
-    const speedSq = v.x * v.x + v.y * v.y + v.z * v.z;
-    const ccd = b.rigidBody.isCcdEnabled();
-    if (!ccd && speedSq > CCD_ON_SPEED_SQ) {
-      b.rigidBody.enableCcd(true);
-    } else if (ccd && speedSq < CCD_OFF_SPEED_SQ) {
-      b.rigidBody.enableCcd(false);
-    }
-  }
-
-  if (bbox) {
-    const killY = bbox.min.y - bboxSize.y;
-    for (let i = balls.length - 1; i >= 0; i--) {
-      const b = balls[i];
-      if (b.rigidBody.translation().y < killY) {
-        world.removeRigidBody(b.rigidBody);
-        scene.remove(b.mesh);
-        balls[i] = balls[balls.length - 1];
-        balls.pop();
-      }
-    }
   }
 
   controls.update();
