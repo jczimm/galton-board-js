@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import stlUrl from '/cad/models/from-stl/recreate_original_board.stl?url';
+import stlUrl from '/cad/models/from-stl/clear_board.stl?url';
 import { TriMeshFlags } from '@dimforge/rapier3d-simd';
 
 const RAPIER = await import('@dimforge/rapier3d-simd');
@@ -19,7 +19,8 @@ const params = (searchParams => ({
 
 const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
-const Z_BOUND_INITIAL = 2.5;     // half-distance between front/back panes
+const Z_BOUND = 2.5;     // half-distance between front/back panes
+const FLOOR_Y = -57;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1a);
@@ -77,28 +78,40 @@ function spawnBall(x, y, z) {
   return { mesh, rigidBody };
 }
 
-let zBound = Z_BOUND_INITIAL;
 let paneCenterZ = 0;
+const paneHalfThickness = 0.5;
 
 function createZPanes(center) {
   paneCenterZ = center.z - 2.54;
   const halfX = Math.max(bboxSize.x, 1) * 4;
   const halfY = Math.max(bboxSize.y, 1) * 4;
-  const halfThickness = 0.5;
 
   const buildPane = (z) => {
     const desc = RAPIER.RigidBodyDesc.fixed()
       .setTranslation(center.x, center.y, z);
     const body = world.createRigidBody(desc);
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, halfThickness)
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, halfY, paneHalfThickness)
       .setRestitution(params.paneRest)
       .setFriction(params.paneFric);
     world.createCollider(colliderDesc, body);
-    return body;
   };
 
-  buildPane(paneCenterZ + zBound);
-  buildPane(paneCenterZ - zBound);
+  buildPane(paneCenterZ + Z_BOUND);
+  buildPane(paneCenterZ - Z_BOUND);
+}
+
+function createFloor(center) {
+  const halfX = Math.max(bboxSize.x, 1) * 4;
+  const halfZ = Math.max(bboxSize.z, 1) * 4;
+  const y = FLOOR_Y;
+  
+  const desc = RAPIER.RigidBodyDesc.fixed()
+    .setTranslation(center.x, y, center.z)
+  const body = world.createRigidBody(desc);
+  const colliderDesc = RAPIER.ColliderDesc.cuboid(halfX, paneHalfThickness, halfZ)
+    .setRestitution(params.paneRest)
+    .setFriction(params.paneFric);
+  world.createCollider(colliderDesc, body);
 }
 
 function spawnBatch() {
@@ -156,10 +169,12 @@ loader.load(stlUrl, (geometry) => {
   world.createCollider(colliderDesc, stlBody);
 
   createZPanes(center);
+  // floor ensures that balls can't escape the bottom of the buckets due to any holes in the single side of the STL we're using
+  createFloor(center);
 
   const centerLineGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(center.x, bbox.max.y + 10, paneCenterZ + zBound - .5),
-    new THREE.Vector3(center.x, bbox.min.y, paneCenterZ + zBound - .5),
+    new THREE.Vector3(center.x, bbox.max.y + 10, paneCenterZ + Z_BOUND - .5),
+    new THREE.Vector3(center.x, bbox.min.y, paneCenterZ + Z_BOUND - .5),
   ]);
   scene.add(new THREE.Line(centerLineGeo, new THREE.LineBasicMaterial({ color: 0xff0000 })));
 

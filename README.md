@@ -19,6 +19,13 @@ A reusable web component built with LIT that creates an interactive 3D Galton Bo
 pnpm install install
 ```
 
+## Development
+
+```bash
+pnpm run dev
+```
+
+
 ## Quick Start
 
 ### Basic Usage
