@@ -64,9 +64,34 @@ photos give a better empirical target than a gaussian does.
 
 ### D. the gut check itself
 
-- [ ] noise floor: ~5 seeds at fixed params -> spread of each metric. nothing else is interpretable without this.
-- [ ] one-at-a-time sweep over ballRest, ballFric, boardRest, boardFric, paneRest, paneFric, + tilt; compare each effect size against the noise floor from above.
-  - deliverable: a ranked list of which coefficients actually matter and which are noise. that's the whole point.
+- [x] noise floor: 8 seeds at baseline, 800 balls. variance sd **7.70** (3.5% of 218.9), skewness sd 0.050 (mean -0.005, symmetric within noise), fit_r2 sd 0.021, w1 sd 0.127mm, mean sd 0.53mm.
+- [x] one-at-a-time sweep, 3 seeds x 15 levels across 7 params, 800 balls, 56 runs total. `uv run python analysis/sensitivity.py`.
+
+### ANSWER: only the ball's own properties matter
+
+| rank | param | worst \|z\| | max variance shift | verdict |
+|---|---|---|---|---|
+| 1 | **ballRest** | 15.2 | +42 (+19%) | dominates everything |
+| 2 | **ballFric** | 5.3 | +28 (+13%) | clearly matters |
+| 3 | paneFric | 3.0 | -16 (-7%) | small, and saturates |
+| 4 | paneRest | 2.3 | +3 | borderline, skewness only |
+| 5 | boardRest | 2.0 | -5 | at the noise floor |
+| 6 | tilt | 1.6 | -8 | not detectable, 0-30 deg |
+| 7 | boardFric | 1.5 | -1 | no effect |
+
+- **ballRest is the one coefficient that has to be pinned down.** .5 -> variance 261 vs 219 at .85 (fit_r2 z=-15.2, w1 z=+11.3), monotonic. .7 is already indistinguishable from .85 (z=1.8), so the sensitivity is concentrated below ~.7.
+- **ballRest .95 never settles at all** — all 3 seeds hit the 60000-step cap still bouncing. excluded from the table; that's a property of the setting, not a failed run.
+- **ballFric** second: .02 -> +28 variance, .3 -> -13. monotonic, more friction = less spread.
+- **paneFric saturates**: .3 and .6 give the same -15. so it's a threshold, not a dial.
+- **board material barely matters.** boardRest and boardFric over 4x and 20x ranges both sit at the noise floor.
+- **tilt does not matter over 0-30 deg**, and the shifts aren't even monotonic (-8.3, +2.2, -0.7) — that's noise, not a trend. this contradicts what I expected in section C, where I argued tilt would make pane friction load-bearing. it doesn't, at least not on its own.
+
+**what this means going forward:** the balls are the same steel spheres on every board, so calibrate `ballRest` and `ballFric` once against the real board and the rest of the coefficients can stay approximate. that's the confidence I was after before designing boards for other PDFs.
+
+**caveats, honestly:**
+- one-at-a-time only, so **no interactions**. tilt x paneFric is exactly the combination C predicted would matter and this design cannot see it. worth one small 2x2 factorial before fully dismissing tilt.
+- 3 seeds per level: \|z\| < 2 means "not detectable at 800 balls with 3 seeds", not "zero".
+- conclusions only hold inside the ranges tried.
 
 ### E. reference target from the photos
 

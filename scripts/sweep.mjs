@@ -73,7 +73,24 @@ function startDevServer() {
   });
 }
 
-async function runOne(context, baseUrl, combo, timeoutSec, existingFiles) {
+// Playwright's own timeouts assume a live browser. If the browser process dies
+// underneath us the wait can sit forever, which stalls the whole sweep -- so
+// race every run against a wall-clock deadline nothing can miss.
+function hardDeadline(ms, label) {
+  return new Promise((_, reject) => {
+    const t = setTimeout(() => reject(new Error(`hard timeout after ${Math.round(ms / 1000)}s (${label})`)), ms);
+    t.unref();
+  });
+}
+
+function runOne(context, baseUrl, combo, timeoutSec, existingFiles) {
+  return Promise.race([
+    attemptRun(context, baseUrl, combo, timeoutSec, existingFiles),
+    hardDeadline((timeoutSec + 120) * 1000, new URLSearchParams(combo).toString()),
+  ]);
+}
+
+async function attemptRun(context, baseUrl, combo, timeoutSec, existingFiles) {
   const query = new URLSearchParams({ autorun: '1', ...combo }).toString();
   const page = await context.newPage();
   const errors = [];
