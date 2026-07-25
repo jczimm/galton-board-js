@@ -53,8 +53,14 @@ photos give a better empirical target than a gaussian does.
 
 ### C. physical fidelity gaps the reference photos exposed
 
-- [ ] **board tilt**: the real board is used tilted back in its stand (~15-25 deg), not vertical. in-plane gravity is g*cos(theta) and the rest presses balls against the back pane — so pane friction is load-bearing in reality but nearly inert in the sim (vertical board, ~no normal force on the panes). rotate the gravity vector and include tilt in the sweep.
-- [ ] **feed geometry**: the real board feeds through a narrow funnel throat (see the animation), while `spawnBatch` spreads balls over `0.2 * bboxSize.x`. that input width convolves into the output variance, so some of the current "normal-looking" result may just be inherited from the spawn. spawn above the funnel and let the STL channel them if the hopper is in clear_board.stl.
+- [x] **board tilt**: `tilt` URL param, in degrees back from vertical. gravity becomes `(0, -g*cos(tilt), -g*sin(tilt))`, so in-plane gravity drops and the remainder presses balls toward the back plate (-z, the side the pegs stand on). confirmed working: mean ball z shifts -1.89 -> -2.02 at tilt 20.
+  - **default stays 0**, so it doesn't silently invalidate comparisons. D sweeps it; the photos suggest the real stand holds ~15-25 deg.
+  - first look (2 seeds, 400 balls): tilt 20 vs 0 moves variance less than the seed-to-seed spread does. needs D's noise floor before that means anything.
+- [c] ~~**feed geometry**: the real board feeds through a narrow funnel throat, while `spawnBatch` spreads balls over `0.2 * bboxSize.x`, so the input width convolves into the output variance~~ — **checked, and this was wrong.** a cross-section of the mesh at the ball plane shows the funnel narrowing from 82.8mm at y=62 to a ~7mm throat at y≈32, above the first peg row. every ball has to pass through it regardless of where it spawned, so the spawn width isn't the input distribution — the throat is.
+  > measured: spawnSpread .04 (a near point source, +/-1.7mm) vs .5 (+/-20.7mm) gives variance 223 / 221 / 230 across 3 seeds each, with within-group sd 5-14. a 12x change in feed width lands inside the seed noise.
+  > `spawnSpread` is still a param so it can be swept, and the vertical spawn jitter no longer reuses `spreadX` — it did, so sweeping feed width would have changed the drop height at the same time.
+- [x] **ball channel depth** (found while doing the above): the panes were at z -5.04 and -0.04, a 5mm channel, but the fins and pegs both span z -3.24..-0.54 — the real 2.7mm gap between the printed back plate and the clear cover. the extra 1.8mm was empty space *behind* the plate, and 0.8% of balls in the old data had leaked into it (they still counted toward buckets by x/y). panes now match the measured channel; the leak is 0% in new runs.
+  > this is the same class of bug as the holes in the bottom edge. tilt would have made it much worse by pressing balls straight into that void.
 
 ### D. the gut check itself
 

@@ -23,7 +23,8 @@ const DATA_DIR = path.join(ROOT, 'analysis', 'data');
 // params the sim page understands; anything here can be swept
 const SIM_PARAMS = [
   'model', 'seed', 'balls', 'ballRest', 'ballFric',
-  'paneRest', 'paneFric', 'boardRest', 'boardFric', 'maxSteps',
+  'paneRest', 'paneFric', 'boardRest', 'boardFric',
+  'tilt', 'spawnSpread', 'maxSteps',
 ];
 
 function parseArgs(argv) {

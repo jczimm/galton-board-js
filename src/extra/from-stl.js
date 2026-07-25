@@ -40,7 +40,14 @@ const params = {
   paneRest: num('paneRest', .1),
   paneFric: num('paneFric', .05),
   boardRest: num('boardRest', .5),
-  boardFric: num('boardFric', .1)
+  boardFric: num('boardFric', .1),
+  // degrees the board leans back from vertical. The real board sits in a stand
+  // rather than standing upright (see analysis/reference/), which reduces
+  // in-plane gravity and presses every ball against the back plate -- so pane
+  // friction carries load in reality but almost none at tilt 0.
+  tilt: num('tilt', 0),
+  // half-width of the ball spawn, as a fraction of board width
+  spawnSpread: num('spawnSpread', .2)
 };
 
 const bidsString = obj => new URLSearchParams(obj).toString()
@@ -77,8 +84,19 @@ const rand = mulberry32(params.seed);
 
 const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
-const Z_BOUND = 2.5;     // half-distance between front/back panes
+const SPAWN_Y_SPREAD = .2;   // as a fraction of board width, like spawnSpread
+
+// The ball channel measured off board_def.stl: the divider fins and the pegs
+// both span sim z -3.24 .. -0.54, which is the gap between the printed back
+// plate and the clear front cover. The panes used to sit at -5.04 and -0.04, a
+// 5mm channel -- 1.8mm of that was empty space *behind* the plate, and ~0.8% of
+// balls ended up in it. Tilt would press balls straight into that void.
+const CHANNEL_CENTER_OFFSET = 1.89;  // below bbox centre z
+const Z_BOUND = 1.35;                // half-depth of the channel
 const FLOOR_Y = -58;
+
+const GRAVITY = 9.81;
+const tiltRad = params.tilt * Math.PI / 180;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1a);
@@ -105,7 +123,14 @@ const dir3 = new THREE.DirectionalLight(0xffffff, 0.6);
 dir3.position.set(50, 50, -50);
 scene.add(dir3);
 
-const world = new RAPIER.World({ x: 0.0, y: -9.81, z: 0.0 });
+// leaning the board back tips gravity out of the board plane: what's left
+// in-plane is g*cos(tilt), and g*sin(tilt) presses balls toward the back plate
+// (-z, the side the pegs stand on)
+const world = new RAPIER.World({
+  x: 0.0,
+  y: -GRAVITY * Math.cos(tiltRad),
+  z: -GRAVITY * Math.sin(tiltRad),
+});
 const PHYSICS_STEP = 1 / 60;
 world.timestep = PHYSICS_STEP;
 world.integrationParameters.numSolverIterations = 8;
@@ -145,7 +170,7 @@ let paneCenterZ = 0;
 const paneHalfThickness = 0.5;
 
 function createZPanes(center) {
-  paneCenterZ = center.z - 2.54;
+  paneCenterZ = center.z - CHANNEL_CENTER_OFFSET;
   const halfX = Math.max(bboxSize.x, 1) * 4;
   const halfY = Math.max(bboxSize.y, 1) * 4;
 
@@ -179,13 +204,17 @@ function createFloor(center) {
 
 function spawnBatch() {
   if (!bbox) return;
-  const spreadX = bboxSize.x * 0.2;
+  const spreadX = bboxSize.x * params.spawnSpread;
   const spreadZ = bboxSize.z * 0.1;
+  // vertical stagger of the spawn column, kept independent of spawnSpread --
+  // it used to reuse spreadX, so sweeping the feed width would have moved the
+  // drop height at the same time
+  const spreadY = bboxSize.x * SPAWN_Y_SPREAD;
   const center = bbox.getCenter(new THREE.Vector3());
   for (let i = 0; i < params.balls; i++) {
     const x = center.x + (rand() - 0.5) * spreadX;
     const z = paneCenterZ + (rand() - 0.5) * spreadZ;
-    const y = SPAWN_Y + (rand() - 0.5) * spreadX;
+    const y = SPAWN_Y + (rand() - 0.5) * spreadY;
     balls.push(spawnBall(x, y, z));
   }
 }

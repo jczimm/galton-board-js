@@ -18,6 +18,8 @@ PARAM_COLS = [
     "paneFric",
     "boardRest",
     "boardFric",
+    "tilt",
+    "spawnSpread",
     "steps",
 ]
 

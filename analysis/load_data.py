@@ -12,6 +12,8 @@ FLOAT_PARAMS = {
     "paneFric",
     "boardRest",
     "boardFric",
+    "tilt",
+    "spawnSpread",
 }
 # `seed` and `settled` only appear in runs exported by the settle detector. Older
 # CSVs lack them entirely -- the concat is diagonal, so those rows come back null
