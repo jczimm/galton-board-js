@@ -4,7 +4,7 @@ import polars as pl
 
 DATA_DIR = Path(__file__).parent / "data"
 
-# Params that should be parsed as floats; anything else stays a string.
+# Explicitly specify param data types
 FLOAT_PARAMS = {
     "ballRest",
     "ballFric",

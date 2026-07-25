@@ -1,3 +1,4 @@
+# %%
 import numpy as np
 import polars as pl
 
@@ -74,12 +75,13 @@ def compute_moments(df: pl.DataFrame, n_bins: int = N_BINS) -> pl.DataFrame:
     return pl.DataFrame(rows).sort("source_file")
 
 
-def main():
-    dat = load_all()
-    moments = compute_moments(dat)
-    with pl.Config(tbl_cols=-1, tbl_width_chars=200):
-        print(moments)
+# %%
+dat = load_all()
+# only include balls in the buckets (i.e. ignore anything stuck on pegs)
+dat = dat.filter(pl.col('y') < -12)
+# %%
+moments = compute_moments(dat)
 
-
-if __name__ == "__main__":
-    main()
+# %%
+moments
+# %%

@@ -20,7 +20,7 @@ const params = (searchParams => ({
 const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
 const Z_BOUND = 2.5;     // half-distance between front/back panes
-const FLOOR_Y = -57;
+const FLOOR_Y = -58;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1a);
