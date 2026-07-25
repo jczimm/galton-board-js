@@ -20,12 +20,15 @@ import numpy as np
 
 MODELS_DIR = Path(__file__).parent.parent / "cad" / "models" / "from-stl"
 
-# `model` token in exported filenames -> stl, matching the from-stl.js glob keys
-MODEL_FILES = {
-    "boarddef": "board_def.stl",
-    "clearboard": "clear_board.stl",
-    "recreateoriginalboard": "recreate_original_board.stl",
-}
+
+def model_files() -> dict[str, Path]:
+    """Board name -> STL, discovered the same way from-stl.js discovers them.
+
+    Both sides glob this directory and strip underscores from the basename, so
+    dropping a new .stl in makes it selectable in the sim (`?model=`), sweepable
+    (`--model`), and analysable here, with nothing to register in either place.
+    """
+    return {p.stem.replace("_", ""): p for p in sorted(MODELS_DIR.glob("*.stl"))}
 
 # a face is treated as part of a divider fin if its normal is this close to +/-x
 X_FACING = 0.99
@@ -139,11 +142,21 @@ def _fin_centers(planes: np.ndarray) -> tuple[np.ndarray, float, float]:
 
 
 @lru_cache(maxsize=None)
-def load_geometry(model: str = "boarddef") -> BoardGeometry:
-    if model not in MODEL_FILES:
-        raise KeyError(f"unknown model {model!r}; have {sorted(MODEL_FILES)}")
+def load_geometry(model: str | Path = "boarddef") -> BoardGeometry:
+    """Derive the bucket layout for a board.
 
-    triangles, normals = _load_triangles(MODELS_DIR / MODEL_FILES[model])
+    Takes a registered board name or a path to any STL, so a candidate board
+    can be measured before it's moved into cad/models/from-stl.
+    """
+    if isinstance(model, Path):
+        path, name = model, model.stem.replace("_", "")
+    else:
+        available = model_files()
+        if model not in available:
+            raise KeyError(f"unknown model {model!r}; have {sorted(available)}")
+        path, name = available[model], model
+
+    triangles, normals = _load_triangles(path)
     centroids = triangles.mean(axis=1)
     x_facing = np.abs(normals[:, 0]) > X_FACING
 
@@ -151,8 +164,14 @@ def load_geometry(model: str = "boarddef") -> BoardGeometry:
     # board there are enough x-facing triangles that clustering invents a
     # regular lattice out of unrelated shell features; down here the bucket
     # dividers are the only repeated structure. Any slab inside the array works.
+    #
+    # Selected by whether a triangle *reaches* into the slab, not by where its
+    # centroid is: a fin face is a tall rectangle, so its two triangles have
+    # centroids near mid-height, and a centroid test would keep or drop a fin
+    # depending on how the exporter happened to split the rectangle.
     y_lo, y_hi = triangles[..., 1].min(), triangles[..., 1].max()
-    slab = x_facing & (centroids[:, 1] < y_lo + 0.2 * (y_hi - y_lo))
+    reaches_bottom = triangles[:, :, 1].min(axis=1) < y_lo + 0.2 * (y_hi - y_lo)
+    slab = x_facing & reaches_bottom
 
     planes = _cluster(centroids[slab][:, 0])
     fin_centers, thickness, pitch = _fin_centers(planes)
@@ -175,7 +194,7 @@ def load_geometry(model: str = "boarddef") -> BoardGeometry:
     edges = np.concatenate([[outer_left], fin_centers, [outer_right]])
 
     return BoardGeometry(
-        model=model,
+        model=name,
         bucket_edges=edges,
         bucket_top_y=float(fin_y.max()),
         bucket_floor_y=float(fin_y.min()),
@@ -185,7 +204,7 @@ def load_geometry(model: str = "boarddef") -> BoardGeometry:
 
 
 if __name__ == "__main__":
-    for name in MODEL_FILES:
+    for name in model_files():
         try:
             g = load_geometry(name)
         except Exception as exc:  # a board without buckets is a legitimate answer

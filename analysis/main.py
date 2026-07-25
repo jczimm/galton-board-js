@@ -1,4 +1,6 @@
 # %%
+from collections.abc import Callable
+
 import numpy as np
 import polars as pl
 
@@ -98,14 +100,23 @@ def summarize(
     x: np.ndarray,
     y: np.ndarray,
     geom: BoardGeometry,
-    target: np.ndarray | None = None,
+    target: np.ndarray | Callable[[BoardGeometry], np.ndarray] | None = None,
 ) -> dict:
     """Bucket a run and describe it.
 
-    `target` is a per-bucket probability vector. Left as None it defaults to the
+    `target` is a per-bucket probability vector, or a function of the geometry
+    returning one -- prefer the function form, since a bare vector is only valid
+    for a board with that exact bucket count. Left as None it defaults to the
     gaussian matched to this run's own mean and variance, which reproduces the
     old normality check as one special case of the general comparison.
     """
+    if callable(target):
+        target = target(geom)
+    if target is not None and len(target) != geom.n_buckets:
+        raise ValueError(
+            f"target has {len(target)} buckets but {geom.model} has "
+            f"{geom.n_buckets}; pass a function of the geometry instead"
+        )
     binned = bucket_counts(x, y, geom)
     counts, n = binned["counts"], binned["n_caught"]
 
@@ -134,7 +145,11 @@ def summarize(
     }
 
 
-def compute_summary(df: pl.DataFrame, target: np.ndarray | None = None) -> pl.DataFrame:
+def compute_summary(
+    df: pl.DataFrame,
+    target: np.ndarray | Callable[[BoardGeometry], np.ndarray] | None = None,
+) -> pl.DataFrame:
+    """Summarise every run in `df`, each against its own board's geometry."""
     rows = []
     for (source_file,), g in df.group_by("source_file"):
         params = {c: g[c][0] for c in PARAM_COLS if c in g.columns}
