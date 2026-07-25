@@ -8,6 +8,8 @@ N_BINS = 16
 
 PARAM_COLS = [
     "model",
+    "seed",
+    "settled",
     "balls",
     "ballRest",
     "ballFric",

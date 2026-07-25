@@ -1,12 +1,26 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import stlUrl from '/cad/models/from-stl/clear_board.stl?url';
 import { TriMeshFlags } from '@dimforge/rapier3d-simd';
 
 const RAPIER = await import('@dimforge/rapier3d-simd');
 
 const searchParams = new URLSearchParams(window.location.search);
+
+// Every board in cad/models/from-stl is bundled and selectable at runtime via
+// `?model=`, so a sweep can target a board without a rebuild. Keys match the
+// `model-` token in exported filenames (underscores stripped), e.g. boarddef.
+const stlUrls = Object.fromEntries(
+  Object.entries(import.meta.glob('/cad/models/from-stl/*.stl', {
+    query: '?url', import: 'default', eager: true,
+  })).map(([p, url]) => [p.match(/([^/]+)\.stl$/)[1].replaceAll('_', ''), url]),
+);
+
+const modelName = searchParams.get('model') || 'boarddef';
+const stlUrl = stlUrls[modelName];
+if (!stlUrl) {
+  throw new Error(`unknown model "${modelName}"; available: ${Object.keys(stlUrls).join(', ')}`);
+}
 
 // num() keeps 0 as a legitimate value -- `|| default` would silently collapse
 // seed=0 into seed=1, which would quietly duplicate runs in a seed sweep.
@@ -18,7 +32,7 @@ const num = (key, fallback, parse = parseFloat) =>
 // everything in `params` ends up in the exported filename, so keep run-control
 // knobs (autorun, maxSteps) out of it
 const params = {
-  model: stlUrl.match(/([^/]+)\.stl$/)[1].replaceAll('_', ''),
+  model: modelName,
   seed: num('seed', 1, parseInt),
   balls: num('balls', 100, parseInt),
   ballRest: num('ballRest', .85),
@@ -28,6 +42,14 @@ const params = {
   boardRest: num('boardRest', .5),
   boardFric: num('boardFric', .1)
 };
+
+const bidsString = obj => new URLSearchParams(obj).toString()
+  .replaceAll('&', '_').replaceAll('=', '-').replaceAll('-0.', '-.');
+
+// Published before the run starts so a sweep driver can tell whether this run's
+// output already exists without having to run it first -- the final filename is
+// this key plus the settled/steps suffix, which is only known at the end.
+window.__simRunKey = bidsString(params);
 
 // headless/batch mode: step as fast as the CPU allows (decoupled from the
 // display clock) and hand the CSV to the driver via window.__simResult
@@ -233,7 +255,7 @@ loader.load(stlUrl, (geometry) => {
   // only now does stepping begin -- see `ready` in animate()
   ready = true;
 }, undefined, (err) => {
-  console.error('Failed to load board_def.stl:', err);
+  console.error(`Failed to load ${modelName} (${stlUrl}):`, err);
 });
 
 // read straight from the rigid bodies rather than the meshes -- in autorun the
@@ -246,7 +268,7 @@ function ballsAsCsv() {
 }
 function paramsAsBIDSString() {
   params.steps = worldSteps;
-  return new URLSearchParams(params).toString().replaceAll('&', '_').replaceAll('=', '-').replaceAll('-0.', '-.');
+  return bidsString(params);
 }
 function downloadBlob(content, fileName, contentType) {
   const blob = new Blob([content], { type: contentType });

@@ -13,12 +13,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite build --mode extra",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sweep": "node scripts/sweep.mjs"
   },
   "main": "dist/galton-board-js.iife.js",
   "module": "dist/galton-board-js.es.js",
   "unpkg": "dist/galton-board-js.iife.js",
   "devDependencies": {
+    "playwright": "^1.62.0",
     "vite": "^6.3.5",
     "vite-plugin-string": "^1.2.3",
     "vite-plugin-top-level-await": "^1.6.0",

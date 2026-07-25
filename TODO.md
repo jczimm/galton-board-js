@@ -34,13 +34,19 @@ photos give a better empirical target than a gaussian does.
   - `autorun` URL param steps free of the display clock (~20x faster) and publishes the result on `window.__simResult` / `window.__simDone` instead of downloading. verified bit-identical to a clock-paced run of the same seed (2955 steps either way, 38.6s vs ~2s).
   - two things had to move to make that true: CCD toggling and escapee removal used to run per *frame*, so they depended on frame rate; they're now keyed to step count. **this slightly changes the physics vs. the existing CSVs in analysis/data** — those were already incomparable, so they should be regenerated rather than mixed in.
   - stepping now waits for the STL to finish loading. previously the world stepped an empty scene while the mesh loaded, which both tripped settle detection instantly (found by testing: a false "settled" at step 165) and made step 0 mean something different depending on load time.
-- [ ] playwright script to drive the param grid over URL params headlessly and collect CSVs into analysis/data
-  > deliberately NOT porting the sim to node — keeping the exact validated physics path, just automating the page. read `window.__simResult` after `window.__simDone`, no download interception needed.
+- [x] playwright driver: `pnpm sweep --balls 800 --seed 1,2,3 --ballRest .7,.85` — every sim param takes a comma-separated list, the grid is their cartesian product. starts its own vite server, runs `--concurrency` pages at a time, writes each CSV into analysis/data.
+  > deliberately NOT porting the sim to node — keeping the exact validated physics path, just automating the page. reads `window.__simResult` after `window.__simDone`, no download interception.
+  - headless chromium (SwiftShader) reproduces real-Chrome runs bit-for-bit — same hashes, same step counts. so the sweep and the interactive page are the same experiment.
+  - resumable: the page publishes `window.__simRunKey` before stepping, so an already-collected run is skipped on page load rather than after re-running it (the filename can't be known up front — it contains `steps`).
+  - `--dry-run` prints the grid, `--headed` watches one, `--base-url` reuses an already-running dev server.
+- [x] the STL was baked in at build time, and was set to `clear_board.stl` — the board with NO pegs. so any run made without editing the import was measuring a funnel, not a galton board. the model is now a runtime param (`?model=boarddef`, default boarddef) with all three boards bundled, so `--model` can be swept like anything else.
 
 ### B. fix the measurement
 
 - [ ] use fixed bucket-edge bins derived from the CAD geometry, not `np.linspace(x.min(), x.max())`
   > right now the bin edges are data-dependent, so different param settings get different bins and the moments aren't comparable across exactly the conditions being swept. also set n_bins to the real bucket count instead of 16.
+  > seen in practice: 200-ball boarddef runs report variance ~109-147 while the old 3000-ball runs report ~300, largely because fewer balls means a narrower observed x range means narrower bins. the number is currently as much a function of ball count as of physics.
+- [ ] `sums / counts` in `moments_for_group` warns on empty bins (0/0); the `np.where` picks the right value but the divide still runs. use `np.divide(..., where=counts>0)`.
 - [ ] use per-bucket counts instead of `mean(y - y.min())` per bin
   > mean-y is proportional to fill height only under uniform packing, and packing is itself a function of restitution/friction — i.e. it's confounded with the sweep. positions of every ball are already in the CSV, so counts are free and unbiased.
 - [ ] generalize `normality_r2` to a divergence against an arbitrary target PDF (chi-square, or EMD if I care where the mass is wrong). normality becomes one target among others; keep reporting the three moments alongside.
@@ -58,8 +64,9 @@ photos give a better empirical target than a gaussian does.
 
 ### E. reference target from the photos
 
-- [ ] extract per-bucket fill heights from `analysis/reference/board_def.webp` (still) and the last frame of `board_def.gif`. rectify with a homography off the four pane corners (real dimensions known from clear_board.stl bbox), then column-profile the ball mass. normalize -> empirical PDF.
+- [ ] extract per-bucket fill heights from `analysis/reference/board_def_still.webp` (939x1440 still, shot nearly straight on) and the last frame of `board_def.webp` (30-frame animation; note it's an animated webp, so `webpmux -get frame N` rather than ffmpeg). rectify with a homography off the four pane corners (real dimensions known from clear_board.stl bbox), then column-profile the ball mass. normalize -> empirical PDF.
 - [ ] the still and the animation's final frame are two independent physical realizations — comparing them gives a real-board run-to-run variability estimate, i.e. how much of the jaggedness is sampling noise vs. structure. do this before treating either profile as a target.
+- [ ] `Galton Board [i-hbnG_IKyI].webm` and `building_instructions.pdf` are additional reference material — the video may give more settled-distribution frames (more realizations), and the instructions should confirm the intended tilt angle and ball count.
   > caveats: unknown ball count, single realization each, unknown handling/tilt during the run. use as a shape/width plausibility check, not to calibrate 6 coefficients.
 - [ ] free sanity check needing no photo: an ideal 10-row lattice gives `sigma = sqrt(10 * .25) * (h_spacing / 2) ~= 3.8mm`. compare to the sim's sigma. big deviation = balls aren't doing a clean lattice walk, which is itself the finding.
 
