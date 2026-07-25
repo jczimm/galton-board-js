@@ -125,6 +125,20 @@ if __name__ == "__main__":
         pl.col("balls") == BALLS,
     )
 
+    # A run that hit maxSteps never came to rest, so its ball positions are a
+    # snapshot mid-bounce rather than a final distribution. Those aren't
+    # comparable with settled runs, but "this setting never settles" is itself a
+    # result about the setting, so report them rather than dropping them quietly.
+    unsettled = summary.filter(pl.col("settled") == 0)
+    if len(unsettled):
+        print(f"!!! {len(unsettled)} run(s) never settled -- excluded from the "
+              f"comparison below, but note which levels they are:")
+        print(unsettled.select(
+            [p for p in BASELINE if p in unsettled.columns] + ["seed", "steps"]
+        ))
+        print()
+        summary = summary.filter(pl.col("settled") == 1)
+
     print(f"=== noise floor ({BALLS} balls, baseline params, varying seed only) ===")
     print(noise_floor(summary))
 
