@@ -24,7 +24,7 @@ const DATA_DIR = path.join(ROOT, 'analysis', 'data');
 const SIM_PARAMS = [
   'model', 'seed', 'balls', 'ballRest', 'ballFric',
   'paneRest', 'paneFric', 'boardRest', 'boardFric',
-  'tilt', 'spawnSpread', 'maxSteps',
+  'tilt', 'spawnSpread', 'gravity', 'maxSteps',
 ];
 
 function parseArgs(argv) {
@@ -60,16 +60,31 @@ function cartesian(grid) {
 function startDevServer() {
   return new Promise((resolve, reject) => {
     const proc = spawn('pnpm', ['dev'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
-    const timer = setTimeout(() => reject(new Error('dev server did not start within 30s')), 30_000);
+
+    const fail = (err) => {
+      // otherwise every failed start leaks a vite that holds a port, and the
+      // next attempt fails too
+      proc.kill();
+      reject(err);
+    };
+    const timer = setTimeout(() => fail(new Error('dev server did not start within 30s')), 30_000);
+
+    // Vite colourises its output, and the escape codes land *inside* the port
+    // number (`localhost:<esc>[1m5173<esc>[22m/`), so strip them before
+    // matching -- whether colour is on depends on the environment, not on us.
+    // Accumulate too, since the line can arrive split across chunks.
+    let out = '';
     proc.stdout.on('data', chunk => {
-      const match = String(chunk).match(/http:\/\/localhost:(\d+)/);
+      out += String(chunk).replace(/\x1b\[[0-9;]*m/g, '');
+      const match = out.match(/http:\/\/localhost:(\d+)/);
       if (match) {
         clearTimeout(timer);
         resolve({ proc, baseUrl: `http://localhost:${match[1]}` });
       }
     });
-    proc.on('error', reject);
-    proc.on('exit', code => reject(new Error(`dev server exited with code ${code}`)));
+
+    proc.on('error', fail);
+    proc.on('exit', code => fail(new Error(`dev server exited with code ${code}`)));
   });
 }
 

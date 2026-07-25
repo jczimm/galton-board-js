@@ -31,8 +31,19 @@ const num = (key, fallback, parse = parseFloat) =>
 
 // everything in `params` ends up in the exported filename, so keep run-control
 // knobs (autorun, maxSteps) out of it
+// Bump whenever the physical model changes in a way that makes old CSVs
+// incomparable -- channel depth, spawn geometry, gravity, collider layout. It
+// rides along in the filename so two runs with identical parameters but
+// different physics can't be silently averaged together, which is exactly what
+// nearly happened when the channel depth changed.
+//   1: original (5mm channel, 2-layer spawn)
+//   2: channel sealed to the plate face, 2.7mm, tilt added
+//   3: 3.2mm channel (3 ball layers), spawn across the full depth
+const PHYSICS_VERSION = 3;
+
 const params = {
   model: modelName,
+  phys: PHYSICS_VERSION,
   seed: num('seed', 1, parseInt),
   balls: num('balls', 100, parseInt),
   ballRest: num('ballRest', .85),
@@ -47,8 +58,17 @@ const params = {
   // friction carries load in reality but almost none at tilt 0.
   tilt: num('tilt', 0),
   // half-width of the ball spawn, as a fraction of board width
-  spawnSpread: num('spawnSpread', .2)
+  spawnSpread: num('spawnSpread', .2),
+  gravity: num('gravity', 9.81)
 };
+
+// The world is in millimetres (the board is 82.8 units across and 82.8mm
+// wide), so real gravity here is 9810 mm/s^2, not 9.81. Left at the historical
+// 9.81 by default so existing runs stay reproducible; pass ?gravity=9810 to
+// compare. Ball trajectories are invariant under gravity scaling -- restitution
+// and friction are dimensionless -- but the solver is not, and a pile settling
+// under 1/1000 g packs far looser than the real board does.
+const GRAVITY = num('gravity', 9.81);
 
 const bidsString = obj => new URLSearchParams(obj).toString()
   .replaceAll('&', '_').replaceAll('=', '-').replaceAll('-0.', '-.');
@@ -66,7 +86,8 @@ const AUTORUN_STEPS_PER_FRAME = 100;
 // settle detection -- a run is "done" when every remaining ball has been below
 // SETTLE_SPEED for SETTLE_HOLD_STEPS consecutive steps. MIN_STEPS guards the
 // start, where every ball is legitimately at rest because it hasn't fallen yet.
-const SETTLE_SPEED_SQ = .05 * .05;
+const SETTLE_SPEED = .05 * Math.sqrt(GRAVITY / 9.81);  // scales with the world's timescale
+const SETTLE_SPEED_SQ = SETTLE_SPEED * SETTLE_SPEED;
 const SETTLE_HOLD_STEPS = 60;   // 1s of sim time
 const MIN_STEPS = 120;
 const MAX_STEPS = num('maxSteps', 60000, parseInt);
@@ -86,16 +107,23 @@ const BALL_RADIUS = .5;
 const SPAWN_Y = 50;
 const SPAWN_Y_SPREAD = .2;   // as a fraction of board width, like spawnSpread
 
-// The ball channel measured off board_def.stl: the divider fins and the pegs
-// both span sim z -3.24 .. -0.54, which is the gap between the printed back
-// plate and the clear front cover. The panes used to sit at -5.04 and -0.04, a
-// 5mm channel -- 1.8mm of that was empty space *behind* the plate, and ~0.8% of
-// balls ended up in it. Tilt would press balls straight into that void.
-const CHANNEL_CENTER_OFFSET = 1.89;  // below bbox centre z
-const Z_BOUND = 1.35;                // half-depth of the channel
+// The ball channel. The back is the printed plate, whose face is at sim
+// z = -3.24 (the fins and pegs stand on it); the panes used to sit at -5.04,
+// leaving 1.8mm of empty space *behind* the plate that ~0.8% of balls fell
+// into, and that tilt would have pressed them into.
+//
+// The front is the clear cover at z = -0.04, which stands 0.5mm proud of the
+// fin tops. Briefly setting it flush with the fins instead gave a 2.7mm
+// channel, leaving ball centres only 1.7mm of range -- room for two layers
+// where three fit. The real board packs about 13 balls per mm of bucket fill
+// and the two-layer version managed 8, so its buckets filled ~1.6x too fast
+// and overflowed the 45mm fins at the ~3000 balls the instructions call for.
+const CHANNEL_BACK_Z = -3.24;
+const CHANNEL_FRONT_Z = -0.04;
+const CHANNEL_CENTER_OFFSET = -(CHANNEL_BACK_Z + CHANNEL_FRONT_Z) / 2;  // below bbox centre z
+const Z_BOUND = (CHANNEL_FRONT_Z - CHANNEL_BACK_Z) / 2;                 // half-depth
 const FLOOR_Y = -58;
 
-const GRAVITY = 9.81;
 const tiltRad = params.tilt * Math.PI / 180;
 
 const scene = new THREE.Scene();
@@ -205,7 +233,12 @@ function createFloor(center) {
 function spawnBatch() {
   if (!bbox) return;
   const spreadX = bboxSize.x * params.spawnSpread;
-  const spreadZ = bboxSize.z * 0.1;
+  // Spawn across the full depth a ball centre can occupy. This used to be
+  // bboxSize.z * 0.1 = 0.79mm, which left the balls in two thin layers using
+  // half the channel; they never spread out afterwards, so the buckets filled
+  // about 1.6x higher per ball than the real board and overflowed the 45mm fins
+  // at realistic ball counts (the photo shows 28mm of fill at ~3000 balls).
+  const spreadZ = 2 * (Z_BOUND - BALL_RADIUS);
   // vertical stagger of the spawn column, kept independent of spawnSpread --
   // it used to reuse spreadX, so sweeping the feed width would have moved the
   // drop height at the same time

@@ -9,6 +9,7 @@ from load_data import load_all
 
 PARAM_COLS = [
     "model",
+    "phys",
     "seed",
     "settled",
     "balls",
@@ -20,6 +21,7 @@ PARAM_COLS = [
     "boardFric",
     "tilt",
     "spawnSpread",
+    "gravity",
     "steps",
 ]
 

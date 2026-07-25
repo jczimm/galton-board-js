@@ -14,11 +14,12 @@ FLOAT_PARAMS = {
     "boardFric",
     "tilt",
     "spawnSpread",
+    "gravity",
 }
 # `seed` and `settled` only appear in runs exported by the settle detector. Older
 # CSVs lack them entirely -- the concat is diagonal, so those rows come back null
 # once any new-format file is present, and the columns are simply absent until then.
-INT_PARAMS = {"balls", "steps", "seed", "settled"}
+INT_PARAMS = {"balls", "steps", "seed", "settled", "phys"}
 
 
 def parse_filename(path: Path) -> dict:
