@@ -30,6 +30,10 @@ BASELINE = {
 
 METRICS = ["mean", "variance", "skewness", "fit_r2", "w1_mm"]
 
+# Ball count is not a parameter under test -- it sets the sampling noise, so
+# mixing counts would compare runs with different noise floors.
+BALLS = 800
+
 
 def _at_baseline(df: pl.DataFrame, exclude: str | None = None) -> pl.Expr:
     """Rows whose parameters are all at baseline, optionally ignoring one."""
@@ -116,12 +120,13 @@ if __name__ == "__main__":
     pl.Config.set_tbl_rows(60)
     pl.Config.set_tbl_width_chars(220)
 
-    summary = compute_summary(load_all())
-    summary = summary.filter(pl.col("tilt").is_not_null())  # post-channel-fix runs only
+    summary = compute_summary(load_all()).filter(
+        pl.col("tilt").is_not_null(),  # post-channel-fix runs only
+        pl.col("balls") == BALLS,
+    )
 
-    print("=== noise floor (baseline params, varying seed only) ===")
-    floor = noise_floor(summary)
-    print(floor)
+    print(f"=== noise floor ({BALLS} balls, baseline params, varying seed only) ===")
+    print(noise_floor(summary))
 
     print("\n=== per-level effects, z = shift / noise ===")
     sens = sensitivity(summary)
@@ -131,3 +136,19 @@ if __name__ == "__main__":
     print("\n=== which coefficients matter (worst |z| over levels tried) ===")
     print(ranking(sens))
     print("\n|z| < 2 is indistinguishable from seed noise at this ball count.")
+
+    # a parameter that jams the board or stops it settling matters for reasons
+    # the distribution metrics won't show
+    print("\n=== run health by level ===")
+    health = (
+        summary.group_by([p for p in BASELINE if p in summary.columns])
+        .agg(
+            pl.col("n_stuck").mean().alias("stuck"),
+            pl.col("n_outside").mean().alias("outside"),
+            pl.col("steps").mean().alias("steps"),
+            pl.col("settled").min().alias("all_settled"),
+            pl.len().alias("runs"),
+        )
+        .sort("stuck", descending=True)
+    )
+    print(health.head(8))
