@@ -25,3 +25,7 @@ dist-ssr
 
 # large reference media (re-downloadable; kept locally in analysis/reference/)
 *.webm
+
+# generated report artifacts -- rebuilt by analysis/figures.py + build_report.py
+analysis/figures/*.png
+analysis/figures/*.html
