@@ -126,7 +126,7 @@ earth-mover distance between distributions, in mm:
 
 ### F. housekeeping
 
-- [ ] brief README update: it still describes only the LIT/cannon-es peg component and doesn't mention the STL board at all (from-stl.html, rapier3d-simd, src/extra/from-stl.js), the cad/ dir, the CSV export + filename convention, or analysis/. keep it short.
+- [x] brief README update: a short section up top on the STL board (from-stl.html, rapier3d-simd, URL params, the settle-and-export CSV convention with `phys-N`), the sweep driver, and analysis/ — with the LIT/cannon-es component kept below as the second, older simulation.
 
 ## Parked until custom boards (do NOT start yet)
 
