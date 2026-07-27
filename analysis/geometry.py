@@ -186,12 +186,48 @@ def load_geometry(model: str | Path = "boarddef") -> BoardGeometry:
     extent = fin_tris[:, :, 1].max(axis=1) - fin_tris[:, :, 1].min(axis=1)
     fin_y = fin_tris[extent > 0.25 * extent.max()][:, :, 1]
 
-    # the outermost fin center isn't the outer edge of the array -- the two edge
-    # buckets (narrower than the rest) are closed by the next x-facing plane
-    # beyond it on each side
-    outer_left = float(planes[planes < fin_centers[0] - thickness].max())
-    outer_right = float(planes[planes > fin_centers[-1] + thickness].min())
-    edges = np.concatenate([[outer_left], fin_centers, [outer_right]])
+    # The array is closed at each end by the board's side wall, not by a fin.
+    # Taking simply the nearest x-facing plane outboard of the last fin is what
+    # this used to do, and it was wrong: the board carries small outward-facing
+    # lips a millimetre or so inboard of the real wall, which made both edge
+    # buckets look ~1.8mm narrower than they are. A wall face is identified the
+    # way a fin face is -- it points *into* the cavity, and it spans the array.
+    fin_top, fin_bottom = float(fin_y.max()), float(fin_y.min())
+    min_span = 0.5 * (fin_top - fin_bottom)
+
+    def wall_face(side: int) -> float:
+        """Innermost inward-facing plane outboard of the outermost fin.
+
+        `side` is -1 for the left end of the array, +1 for the right.
+        """
+        limit = fin_centers[0] - thickness if side < 0 else fin_centers[-1] + thickness
+        candidates = planes[planes < limit] if side < 0 else planes[planes > limit]
+        best = None
+        for p in candidates:
+            # inward means +x on the left, -x on the right
+            face = x_facing & (np.abs(centroids[:, 0] - p) <= CLUSTER_TOL) & (
+                normals[:, 0] * side < 0
+            )
+            in_array = face & (centroids[:, 1] < fin_top) & (centroids[:, 1] > fin_bottom - 1)
+            if not in_array.any():
+                continue
+            ys = triangles[in_array][:, :, 1]
+            if ys.max() - ys.min() < min_span:
+                continue
+            if best is None or (p > best if side < 0 else p < best):
+                best = float(p)
+        if best is None:
+            raise ValueError(f"no wall face found on the {'left' if side < 0 else 'right'}")
+        return best
+
+    # place the edge half a fin-thickness beyond the wall face, so that every
+    # bucket centre is the midpoint of the span a ball can actually occupy --
+    # the same thing a fin centre gives for the interior buckets
+    edges = np.concatenate([
+        [wall_face(-1) - thickness / 2],
+        fin_centers,
+        [wall_face(+1) + thickness / 2],
+    ])
 
     return BoardGeometry(
         model=name,

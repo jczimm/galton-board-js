@@ -157,8 +157,21 @@ def _as_png(webp: str, frame: int | None = None) -> str:
 
 
 def extract(name: str, webp: str, region: tuple, sd: float, frame: int | None = None,
-            pitch_mm: float = 4.8, edge_bucket_mm: float = 2.96) -> PhotoProfile:
+            pitch_mm: float | None = None, edge_bucket_mm: float | None = None) -> PhotoProfile:
+    """Read the per-bucket ball distribution out of one photograph.
+
+    Bucket widths come from the board geometry rather than being written down
+    here, so the photo and the simulation are always binned the same way. They
+    were hardcoded once, with the two edge buckets ~1.8mm too narrow, which
+    clipped the outer columns off both ends of the measured distribution.
+    """
     from PIL import Image
+
+    from geometry import load_geometry
+
+    geom = load_geometry("boarddef")
+    pitch_mm = geom.pitch if pitch_mm is None else pitch_mm
+    edge_bucket_mm = float(geom.widths[0]) if edge_bucket_mm is None else edge_bucket_mm
 
     gray = np.asarray(Image.open(_as_png(webp, frame)).convert("L"), dtype=float)
     r0, r1, c0, c1 = region

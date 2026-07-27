@@ -68,7 +68,18 @@ def label_buckets(img: Image.Image, edges, scale=1, colour=(255, 255, 255)):
         d.text((cx - 6, img.height - 14), str(i + 1), fill=colour)
 
 
-def bucket_edges_from(dividers, pitch_px, edge_bucket_mm=2.96, pitch_mm=4.8, width=None):
+def bucket_edges_from(dividers, pitch_px, edge_bucket_mm=None, pitch_mm=None, width=None):
+    """Close the detected fin array with the two outer edges.
+
+    Widths come from the board geometry, matching photo.extract -- the edge
+    bucket is very nearly as wide as the interior ones, and hardcoding it
+    narrower drew the dashed edges straight through the outer ball columns.
+    """
+    from geometry import load_geometry
+
+    geom = load_geometry("boarddef")
+    pitch_mm = geom.pitch if pitch_mm is None else pitch_mm
+    edge_bucket_mm = float(geom.widths[0]) if edge_bucket_mm is None else edge_bucket_mm
     edge_px = edge_bucket_mm * (pitch_px / pitch_mm)
     edges = np.concatenate([[dividers[0] - edge_px], dividers, [dividers[-1] + edge_px]])
     return np.clip(np.round(edges).astype(int), 0, (width - 1) if width else None)

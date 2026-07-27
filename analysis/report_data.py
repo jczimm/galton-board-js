@@ -67,6 +67,31 @@ def main():
         "phys2_phys3": earth_mover(sims2.mean(axis=0), sims3.mean(axis=0), geom.centers),
     }
 
+    # The ball mask also catches the board rim and the corner screws. Trimming
+    # those rows is the check that they don't matter -- quote the measurement
+    # rather than an assurance.
+    from photo import SOURCES, ball_mask, find_dividers
+    from figures import bucket_edges_from, load_crop
+
+    cfg = SOURCES["still"]
+    crop = load_crop(cfg)
+
+    def trimmed_probs(top: int, bottom: int) -> np.ndarray:
+        c = crop[top: crop.shape[0] - bottom]
+        m = ball_mask(c, cfg["sd"])
+        div, pitch = find_dividers(m.sum(axis=0).astype(float))
+        e = bucket_edges_from(div, pitch, width=c.shape[1])
+        counts = np.array([m[:, lo:hi].sum() for lo, hi in zip(e[:-1], e[1:])], dtype=float)
+        return counts / counts.sum()
+
+    base = trimmed_probs(0, 0)
+    rim = [
+        {"top": t, "bottom": b,
+         "emd_mm": earth_mover(base, trimmed_probs(t, b), geom.centers),
+         "variance": moments(trimmed_probs(t, b), geom.centers)["variance"]}
+        for t, b in [(5, 10), (10, 20), (15, 25)]
+    ]
+
     # sensitivity was measured on phys 2 only
     summary = compute_summary(load_all(DATA_DIR / "pre-phys3")).filter(
         pl.col("tilt").is_not_null(), pl.col("balls") == BALLS
@@ -98,6 +123,8 @@ def main():
             for name, p in photos.items()
         },
         "n_seeds": {"phys2": len(sims2), "phys3": len(sims3)},
+        "rim_trim": rim,
+        "bucket_widths": geom.widths.tolist(),
         "distances_mm": dists,
         "noise_floor": noise_floor(settled).to_dicts(),
         "ranking": ranking(sens).to_dicts(),

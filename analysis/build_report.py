@@ -385,9 +385,10 @@ footer{padding:40px 0 0;color:var(--dim);font-size:13px;font-family:var(--mono)}
       There is no evidence it is mis-calibrated &mdash; but with two realizations the photos
       also cannot discriminate between coefficient settings.</p></div>
     <div class="verdict"><div class="k">Fixed</div><p class="v">
-      <strong>Three measurement bugs silently invalidated earlier runs.</strong>
-      A board with no pegs, histogram bins that moved with the data, and a ball
-      channel one layer too shallow. All three produced plausible numbers.</p></div>
+      <strong>Four measurement bugs silently invalidated earlier runs.</strong>
+      A board with no pegs, histogram bins that moved with the data, a ball channel one
+      layer too shallow, and both edge buckets measured 1.8&thinsp;mm too narrow. Every one
+      of them returned a believable distribution.</p></div>
     <div class="verdict"><div class="k">Next</div><p class="v">
       <strong>The lattice assumption behind the custom-board generator is probably wrong.</strong>
       Observed spread is {lo:.1f}&ndash;{hi:.1f}&times; what an ideal ten-row lattice predicts, so a ball
@@ -409,8 +410,10 @@ footer{padding:40px 0 0;color:var(--dim);font-size:13px;font-family:var(--mono)}
     the fitted divider comb, dashed at the two outer edges where the geometry closes the
     array rather than a detection. At {still_ppm:.2f}&thinsp;px/mm the balls separate cleanly.
     The mask also catches the rim and the corner screws &mdash; trimming those rows moves the
-    distribution by {0.04:.2f}&ndash;{0.07:.2f}&thinsp;mm, against a seed-to-seed noise of
-    {D['distances_mm']['sim_seed_to_seed']:.2f}&thinsp;mm, so it is left in.</figcaption>
+    distribution by {min(r['emd_mm'] for r in D['rim_trim']):.2f}&ndash;{max(r['emd_mm'] for r in D['rim_trim']):.2f}&thinsp;mm,
+    against a seed-to-seed noise of {D['distances_mm']['sim_seed_to_seed']:.2f}&thinsp;mm, so it is left in.
+    <b>The dashed edges are drawn where they are because of a fix:</b> they used to sit
+    1.8&thinsp;mm further in, straight through the outer ball columns &mdash; see below.</figcaption>
   </figure>
 
   <h3>Why each image needs a different mask</h3>
@@ -540,6 +543,22 @@ footer{padding:40px 0 0;color:var(--dim);font-size:13px;font-family:var(--mono)}
       fins at 3000 balls.</p>
       <p class="cost">Cost: invisible at 800 balls, fatal at 3000. Found only because the
       instructions specify 3000&ndash;3500 balls.</p>
+    </div>
+    <div class="bug">
+      <h4>The two edge buckets were measured 1.8&thinsp;mm too narrow</h4>
+      <p>Bucket boundaries are the fin centres, and the array is closed at each end by the
+      board's side wall. The derivation took simply the nearest x-facing plane outboard of the
+      last fin &mdash; which is a {0.2:.1f}&thinsp;mm tall outward-facing lip at
+      x&nbsp;=&nbsp;&plusmn;36.56, not the wall at &plusmn;37.80. The real test is the one used
+      for fins: a bounding face points <em>into</em> the cavity and spans the array.</p>
+      <p>Both edge buckets came out {2.96:.2f}&thinsp;mm wide instead of
+      {D['bucket_widths'][0]:.2f}. Every bucket on this board is in fact the same width.</p>
+      <p class="cost">Cost: {0.81:.2f}% of simulated balls silently discarded as landing
+      &ldquo;outside the array&rdquo;, the outer columns clipped off both ends of every
+      photograph, and the two edge bucket centres displaced by 0.9&thinsp;mm. The still's
+      variance was understated by {320.3-284.5:.0f}&thinsp;mm&sup2; &mdash; four times the noise floor.</p>
+      <p class="cost">Found by looking at the figure above and noticing the dashed lines
+      didn't line up with the walls.</p>
     </div>
     <div class="bug">
       <h4>&hellip;and runs from both channel geometries had identical filenames</h4>
